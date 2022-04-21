@@ -1,0 +1,5 @@
+# ninja log v5
+410	466	1650536338709849257	CloudStorageProject	a55337174c4eb908
+0	410	1650536338653821256	CMakeFiles/CloudStorageProject.dir/main.cpp.o	59df8e265a24fdfe
+2	359	1650536454329146535	CMakeFiles/CloudStorageProject.dir/main.cpp.o	dc7bd3ca3053c15c
+359	484	1650536454457146539	CloudStorageProject	265652b346077e09
