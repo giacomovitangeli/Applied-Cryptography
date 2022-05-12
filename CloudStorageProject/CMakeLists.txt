@@ -4,6 +4,5 @@ project(CloudStorageProject)
 set(CMAKE_CXX_STANDARD 14)
 include_directories(/usr/include/openssl/)
 link_libraries(crypto)
-# giacomo vitangeli ubuntu 18
 
 add_executable(CloudStorageProject main.cpp)

@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/Applied-Cryptography.iml" filepath="$PROJECT_DIR$/.idea/Applied-Cryptography.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/CloudStorageProject.iml" filepath="$PROJECT_DIR$/.idea/CloudStorageProject.iml" />
     </modules>
   </component>
 </project>
