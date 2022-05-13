@@ -1,3 +1,0 @@
-/home/giacomo/Cybersecurity/#EsamiAttuali/Applied Cryptography/Project/Applied-Cryptography/CloudStorageProject/cmake-build-debug/CMakeFiles/CloudStorageProject.dir
-/home/giacomo/Cybersecurity/#EsamiAttuali/Applied Cryptography/Project/Applied-Cryptography/CloudStorageProject/cmake-build-debug/CMakeFiles/edit_cache.dir
-/home/giacomo/Cybersecurity/#EsamiAttuali/Applied Cryptography/Project/Applied-Cryptography/CloudStorageProject/cmake-build-debug/CMakeFiles/rebuild_cache.dir

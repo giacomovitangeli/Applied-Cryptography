@@ -1,0 +1,6 @@
+make --dry-run --keep-going --print-directory
+make: Entering directory '/home/giacomo/Cybersecurity/#EsamiAttuali/Applied Cryptography/Project/Applied-Cryptography'
+make: Leaving directory '/home/giacomo/Cybersecurity/#EsamiAttuali/Applied Cryptography/Project/Applied-Cryptography'
+ 
+make: *** No targets specified and no makefile found.  Stop.
+
