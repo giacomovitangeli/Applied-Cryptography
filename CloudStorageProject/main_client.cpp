@@ -13,6 +13,8 @@ int main() {
 	 RAND_bytes(key, 16);
 	 RAND_bytes(iv, 16);
  	/* proceeds with encryption */
-	cout<<key[4]<<endl;
+	for(int i=0; i<16; i++){
+		cout<<key[i]<<endl;
+	}
 return 0;
 }
