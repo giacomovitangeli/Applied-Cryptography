@@ -1,9 +1,9 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-#include <errno.h>
-#include <malloc.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
+#include <cerrno>
+#include <malloc/malloc.h> // Piero: malloc path must be malloc/malloc.h; Altri: malloc path is malloc.h
 #include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <openssl/rand.h>
 
 int main(){
 	int socket1 = 0, len = 0, ret = 0, i = 0;
@@ -19,7 +20,7 @@ int main(){
     uint16_t lmsg;
     struct sockaddr_in sv_addr;
 
-	/*	Pulizia e inizializzazione strutture client	 */
+	//	Pulizia e inizializzazione strutture client
 	memset(&sv_addr, 0, sizeof(sv_addr)); 
 	sv_addr.sin_family = AF_INET;
     sv_addr.sin_port = 4242;//htons(atoi(4242));
@@ -92,5 +93,4 @@ int main(){
 		}
 		i = 0;
 	}
-	return 0; // inutile
 }

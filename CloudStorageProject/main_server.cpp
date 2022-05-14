@@ -1,9 +1,9 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-#include <errno.h>
-#include <malloc.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
+#include <cerrno>
+#include <malloc/malloc.h> // Piero: malloc path must be malloc/malloc.h; Altri: malloc path is malloc.h
 #include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -33,7 +33,7 @@ int main(){
     }
     printf(">>> Socket creato correttamente!\n");
 	
-    /*	Pulizia e inizializzazione strutture server	 */
+    //	Pulizia e inizializzazione strutture server
     memset(&my_addr, 0, sizeof(my_addr));
     my_addr.sin_family = AF_INET;
     my_addr.sin_port = htons(4242); //4242 porta CASUALE
@@ -53,7 +53,7 @@ int main(){
     printf(">>> Socket associato correttamente all'indirizzo!\n");
 	FD_SET(listner_socket, &master);	// Aggiungo il listner al master
 	fdmax = listner_socket;
-    len = sizeof(client_addr);
+    int len = sizeof(client_addr);
 
 
 	while(1){	//Processo unico, client multipli gestiti tramite select()
@@ -63,7 +63,8 @@ int main(){
 			if(FD_ISSET(k, &read_set)){
 				if(k == listner_socket){ // Sono il listner
 					printf(">>> In attesa di connessione...\n\n");
-        			new_socket = accept(listner_socket, (struct sockaddr*)&client_addr, len);
+        			new_socket = accept(listner_socket, (struct sockaddr*)&client_addr,
+                                        reinterpret_cast<socklen_t *>(len));
        				if(new_socket < 0){
             			perror("Errore nella creazione del socket di comunicazione!\n");
             			exit(0);
@@ -74,14 +75,14 @@ int main(){
 				}
 				else{	// Non sono il listner
 					printf(">>> In attesa di un comando dal client...\n\n");
-					/* Alloco spazio per i messaggi sia in entrata che in uscita */
+					// Alloco spazio per i messaggi sia in entrata che in uscita
 					rcv_msg = (char*)malloc(128);
 					if(!rcv_msg)
 						exit(0);
 					resp_msg = (char*)malloc(128);
 					if(!resp_msg)
 						exit(0);
-					/* RICEVO LA LUNGHEZZA DEL MESSAGGIO */
+					// RICEVO LA LUNGHEZZA DEL MESSAGGIO
 					ret = recv(k, (void*)&lmsg, sizeof(uint16_t), 0);
 					if(ret == 0){
 						printf("Comunicazione col client interrotta!\n");
@@ -91,7 +92,7 @@ int main(){
 		                printf("Errore nella recv!\n");
 		                exit(0);
 		            }
-					/* RICEVO IL MESSAGGIO */
+					// RICEVO IL MESSAGGIO
 					len = ntohs(lmsg);
 					ret = recv(k, (void*)rcv_msg, len, 0);
 					if(ret == 0){
@@ -115,6 +116,4 @@ int main(){
 			}
 		}
 	}
-					
-	return 0; // inutile
 }
