@@ -25,15 +25,15 @@ int gcm_encrypt(unsigned char *plain, int plain_len,
 		error_handler("creazione contesto fallita");
 	
 	// INIZIALIZZAZIONE CONTESTO
-	if(1 != EVP_EncryptInit(ctx, EVP_aes_256_gcm(), key, iv)))
+	if(1 != EVP_EncryptInit(ctx, EVP_aes_256_gcm(), key, iv))
 		error_handler("inizializzazione contesto fallita");
 	
 	// UPDATE CONTESTO -- AAD data -> quello che voglio autenticare
-	if(1 != EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len)))
+	if(1 != EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len))
 		error_handler("update contesto (AAD) fallito");
 	
 	// UPDATE CONTESTO -- Generazione ciphertext
-	if(1 != EVP_EncryptUpdate(ctx, cipher, &len, plain, plain_len)))
+	if(1 != EVP_EncryptUpdate(ctx, cipher, &len, plain, plain_len))
 		error_handler("creazione contesto (ciphertext) fallito");
 
 	cipher_len = len;
@@ -67,15 +67,15 @@ int gcm_decrypt(unsigned char *cipher, int cipher_len,
 		error_handler("creazione contesto fallita");
 	
 	// INIZIALIZZAZIONE CONTESTO
-	if(1 != EVP_DecryptInit(ctx, EVP_aes_256_gcm(), key, iv)))
+	if(1 != EVP_DecryptInit(ctx, EVP_aes_256_gcm(), key, iv))
 		error_handler("inizializzazione contesto fallita");
 	
 	// UPDATE CONTESTO -- AAD data -> quello che voglio autenticare
-	if(1 != EVP_DecryptUpdate(ctx, NULL, &len, aad, aad_len)))
+	if(1 != EVP_DecryptUpdate(ctx, NULL, &len, aad, aad_len))
 		error_handler("update contesto (AAD) fallito");
 	
 	// UPDATE CONTESTO -- Generazione ciphertext
-	if(1 != EVP_DecryptUpdate(ctx, plain, &len, cipher, cipher_len)))
+	if(1 != EVP_DecryptUpdate(ctx, plain, &len, cipher, cipher_len))
 		error_handler("creazione contesto (ciphertext) fallito");
 
 	plain_len = len;

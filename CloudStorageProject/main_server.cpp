@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <ctime>
 #include <cerrno>
 #include <malloc/malloc.h> // Piero: malloc path must be malloc/malloc.h; Altri: malloc path is malloc.h
@@ -13,9 +14,14 @@
 #include <sys/stat.h>
 #include <dirent.h>
 
+#define PORT 4242
+
+using namespace std;
+
 int main(){
 	int listner_socket = 0, new_socket = 0, ret = 0, option = 1, k = 0, fdmax;
-	char *resp_msg = 0, *rcv_msg = 0;
+	//char *resp_msg = 0, *rcv_msg = 0;
+	string *resp_msg = 0, *rcv_msg = 0;
 	uint16_t lmsg; //fixme *len;
 	struct sockaddr_in my_addr, client_addr;
 	fd_set master; 
@@ -36,7 +42,7 @@ int main(){
     //	Pulizia e inizializzazione strutture server
     memset(&my_addr, 0, sizeof(my_addr));
     my_addr.sin_family = AF_INET;
-    my_addr.sin_port = htons(4242); //4242 porta CASUALE
+    my_addr.sin_port = htons(PORT); //4242 porta CASUALE
     my_addr.sin_addr.s_addr = INADDR_ANY; // vincola il socket a tutte le interfacce, usare inet_addr("127.0.0.1"); se si vuole utilizzare il solo indirizzo locale
 
     ret = bind(listner_socket, (struct sockaddr*)&my_addr, sizeof(my_addr));
@@ -63,9 +69,11 @@ int main(){
 			if(FD_ISSET(k, &read_set)){
 				if(k == listner_socket){ // Sono il listner
 					printf(">>> In attesa di connessione...\n\n");
-        			new_socket = accept(listner_socket, (struct sockaddr*)&client_addr,
-                                        reinterpret_cast<socklen_t *>(len));
-       				if(new_socket < 0){
+
+                    new_socket = accept(listner_socket, (struct sockaddr*)&client_addr,
+                                        reinterpret_cast<socklen_t *>(&len));
+
+                    if(new_socket < 0){
             			perror("Errore nella creazione del socket di comunicazione!\n");
             			exit(0);
         			}
@@ -76,10 +84,10 @@ int main(){
 				else{	// Non sono il listner
 					printf(">>> In attesa di un comando dal client...\n\n");
 					// Alloco spazio per i messaggi sia in entrata che in uscita
-					rcv_msg = (char*)malloc(128);
+					rcv_msg = (string*)malloc(128);
 					if(!rcv_msg)
 						exit(0);
-					resp_msg = (char*)malloc(128);
+					resp_msg = (string*)malloc(128);
 					if(!resp_msg)
 						exit(0);
 					// RICEVO LA LUNGHEZZA DEL MESSAGGIO
@@ -104,8 +112,8 @@ int main(){
 		                exit(0);
 		            }
 					printf("%s", rcv_msg);
-		            fgets(resp_msg, 128, stdin);
-					len = strlen(resp_msg);
+		            fgets(reinterpret_cast<char *>(resp_msg), 128, stdin);
+					len = strlen(reinterpret_cast<const char *>(resp_msg));
 		            lmsg = htons(len);
 		            send(k, (void*)&lmsg, sizeof(uint16_t), 0);
 		            send(k, (void*)resp_msg, len, 0);

@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <openssl/rand.h>
+#define PORT 4242
 
 int main(){
 	int socket1 = 0, len = 0, ret = 0, i = 0;
@@ -23,14 +24,14 @@ int main(){
 	//	Pulizia e inizializzazione strutture client
 	memset(&sv_addr, 0, sizeof(sv_addr)); 
 	sv_addr.sin_family = AF_INET;
-    sv_addr.sin_port = 4242;//htons(atoi(4242));
+    sv_addr.sin_port = htons(PORT);
     if((ret = inet_pton(AF_INET, "127.0.0.1", &(sv_addr.sin_addr))) == 0){
 		printf("Formato indirizzo non valido!\n");
 		exit(0);
 	}
     socket1 = socket(AF_INET, SOCK_STREAM, 0);
     if(socket1 < 0){
-        printf("Errore nellacreazione del socket di connessione!\n");
+        printf("Errore nella creazione del socket di connessione!\n");
         exit(0);
     }
     printf(">>> Socket creato correttamente!\n"); 
