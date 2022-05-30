@@ -1,33 +1,14 @@
 /*		CLIENT -- CLOUD STORAGE PROJECT -- APPLIED CRIPTOGRAPHY		*/
 
-#include "util_fun.cpp"
-#include "data_struct.cpp"
-#include <stdio.h>
-#include <cstdlib>
-#include <string.h>
-#include <time.h>
-#include <errno.h>
-#include <malloc.h>
-#include <arpa/inet.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <ifaddrs.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <dirent.h>
-#include <iostream>
-#include <string>
-#include <iostream>
-#include <openssl/evp.h>
-#include <openssl/rand.h>
+#include "data_struct.h"
+
 
 
 using namespace std;
 
 
 //	START CRYPTO UTILITY FUNCTIONS
-
+/*
 void error_handler(const string err){
     cout << "Errore: " << err << endl;
     exit(0);
@@ -128,6 +109,7 @@ int gcm_decrypt(unsigned char *cipher, int cipher_len,
 
 //	END CRYPTO UTILITY FUNCTIONS
 
+*/
 
 /* TEST ONLY */
 unsigned char key[] = "password12345678password12345678";

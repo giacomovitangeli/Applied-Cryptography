@@ -1,32 +1,11 @@
 /*		UTILITY FUNCTIONS -- CLOUD STORAGE PROJECT -- APPLIED CRIPTOGRAPHY		*/
 
-//TODO use this file to collect crypto utility functions
+#include "data_struct.h"
 
-#include <string>
-#include <iostream>
-#include <openssl/evp.h>
-#include <openssl/rand.h>
-
-
-//  START MACRO COMMANDS
-#define UPLOAD 		0b001
-#define DOWNLOAD 	0b010
-#define DELETE		0b011
-#define LIST		0b100
-#define RENAME		0b101
-#define LOGOUT		0b110
-/*	special auth command at startup */
-#define AUTH		0b111
-//  END MACRO COMMANDS
-
-//  START SIZE LMIT
-#define MAX_FILE_NAME 	24
-#define MAX_FILSE_SIZE	2^^32
-//  END SIZE LIMIT
 
 using namespace std;
 
-/*
+
 //	START CRYPTO UTILITY FUNCTIONS
 
 void error_handler(const string err){
@@ -127,4 +106,4 @@ int gcm_decrypt(unsigned char *cipher, int cipher_len,
 }
 
 //	END CRYPTO UTILITY FUNCTIONS
-*/
+
