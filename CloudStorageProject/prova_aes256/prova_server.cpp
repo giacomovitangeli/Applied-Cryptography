@@ -35,7 +35,7 @@
 /*	SIZE LMIT	*/
 #define MAX_FILE_NAME 	24
 #define MAX_FILSE_SIZE	2^^32
-/*	END*/
+/*	END  */
 
 using namespace std;
 

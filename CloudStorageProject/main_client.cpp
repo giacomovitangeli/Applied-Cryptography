@@ -1,9 +1,13 @@
-#include <cstdio>
+/*		CLIENT -- CLOUD STORAGE PROJECT -- APPLIED CRIPTOGRAPHY		*/
+
+#include "util_fun.cpp"
+#include "data_struct.cpp"
+#include <stdio.h>
 #include <cstdlib>
-#include <cstring>
-#include <ctime>
-#include <cerrno>
-#include <malloc/malloc.h> // Piero: malloc path must be malloc/malloc.h; Altri: malloc path is malloc.h
+#include <string.h>
+#include <time.h>
+#include <errno.h>
+#include <malloc.h>
 #include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -12,86 +16,184 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <iostream>
+#include <string>
+#include <iostream>
+#include <openssl/evp.h>
 #include <openssl/rand.h>
-#define PORT 4242
+
+
+using namespace std;
+
+
+//	START CRYPTO UTILITY FUNCTIONS
+
+void error_handler(const string err){
+    cout << "Errore: " << err << endl;
+    exit(0);
+}
+
+int gcm_encrypt(unsigned char *plain, int plain_len,
+                unsigned char *aad, int aad_len,
+                unsigned char *key,
+                unsigned char *iv, int iv_len,
+                unsigned char *cipher,
+                unsigned char *tag){
+
+    EVP_CIPHER_CTX *ctx;
+    int cipher_len, len;
+
+    // CREAZIONE CONTESTO
+    if(!(ctx = EVP_CIPHER_CTX_new()))
+        error_handler("creazione contesto fallita");
+
+    // INIZIALIZZAZIONE CONTESTO
+    if(1 != EVP_EncryptInit(ctx, EVP_aes_256_gcm(), key, iv))
+        error_handler("inizializzazione contesto fallita");
+
+    // UPDATE CONTESTO -- AAD data -> quello che voglio autenticare
+    if(aad && aad_len > 0){
+        if(1 != EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len))
+            error_handler("update contesto (AAD) fallito");
+    }
+
+    // UPDATE CONTESTO -- Generazione ciphertext
+    if(1 != EVP_EncryptUpdate(ctx, cipher, &len, plain, plain_len))
+        error_handler("creazione contesto (ciphertext) fallito");
+    cipher_len = len;
+
+    // FINALIZE
+    if(1 != EVP_EncryptFinal(ctx, cipher + len, &len))
+        error_handler("final contesto fallita");
+    cipher_len += len;
+
+    //TAG check & RET
+    if(aad && aad_len > 0){
+        if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, 16, tag))
+            error_handler("autenticazione dati fallita");
+    }
+
+    EVP_CIPHER_CTX_free(ctx);
+    return cipher_len;
+}
+
+int gcm_decrypt(unsigned char *cipher, int cipher_len,
+                unsigned char *aad, int aad_len,
+                unsigned char *tag,
+                unsigned char *key,
+                unsigned char *iv, int iv_len,
+                unsigned char *plain){
+
+    EVP_CIPHER_CTX *ctx;
+    int plain_len, len, ret;
+
+    // CREAZIONE CONTESTO
+    if(!(ctx = EVP_CIPHER_CTX_new()))
+        error_handler("creazione contesto fallita");
+
+    // INIZIALIZZAZIONE CONTESTO
+    if(1 != EVP_DecryptInit(ctx, EVP_aes_256_gcm(), key, iv))
+        error_handler("inizializzazione contesto fallita");
+
+    // UPDATE CONTESTO -- AAD data -> quello che voglio autenticare
+    if(aad && aad_len > 0){
+        if(1 != EVP_DecryptUpdate(ctx, NULL, &len, aad, aad_len))
+            error_handler("update contesto (AAD) fallito");
+    }
+
+    // UPDATE CONTESTO -- Generazione ciphertext
+    if(1 != EVP_DecryptUpdate(ctx, plain, &len, cipher, cipher_len))
+        error_handler("creazione contesto (ciphertext) fallito");
+    plain_len = len;
+
+    //TAG check
+    if(aad && aad_len > 0){
+        if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, 16, tag))
+            error_handler("autenticazione dati fallita");
+    }
+
+    // FINALIZE
+    ret = EVP_DecryptFinal(ctx, plain + len, &len);
+    EVP_CIPHER_CTX_cleanup(ctx);
+
+    if(ret > 0){
+        plain_len += len;
+        return plain_len;
+    }
+    else{
+        error_handler("verifica fallita");
+        return -1;
+    }
+}
+
+//	END CRYPTO UTILITY FUNCTIONS
+
+
+/* TEST ONLY */
+unsigned char key[] = "password12345678password12345678";
+unsigned char iv[] = "123456789012";
+/*	END*/
+
 
 int main(){
-	int socket1 = 0, len = 0, ret = 0, i = 0;
-	char *rcv_msg = 0, *resp_msg = 0;
+
+    int socket_d, len, ret;
+    unsigned char *rcv_msg, *resp_msg, *cipher, tag[16], *plaintext, *ciphertext;
     uint16_t lmsg;
     struct sockaddr_in sv_addr;
+    struct dummy_packet packet;
 
-	//	Pulizia e inizializzazione strutture client
-	memset(&sv_addr, 0, sizeof(sv_addr)); 
-	sv_addr.sin_family = AF_INET;
-    sv_addr.sin_port = htons(PORT);
-    if((ret = inet_pton(AF_INET, "127.0.0.1", &(sv_addr.sin_addr))) == 0){
-		printf("Formato indirizzo non valido!\n");
-		exit(0);
-	}
-    socket1 = socket(AF_INET, SOCK_STREAM, 0);
-    if(socket1 < 0){
-        printf("Errore nella creazione del socket di connessione!\n");
-        exit(0);
+    /*	Cleanup and initialization	 */
+    memset(&sv_addr, 0, sizeof(sv_addr));
+    sv_addr.sin_family = AF_INET;
+    sv_addr.sin_port = htons(4242); //RANDOM port number
+    if((ret = inet_pton(AF_INET, "127.0.0.1", &(sv_addr.sin_addr))) == 0)
+        error_handler("address format not valid");
+
+    if((socket_d = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+        error_handler("socket creation failed");
+
+    cout << "> Socket creato correttamente!" << endl;
+
+    if((ret = connect(socket_d, (struct sockaddr*)&sv_addr, sizeof(sv_addr))) < 0)
+        error_handler("connect() failed");
+
+    /* Endless loop - Managing entire session */
+
+    while(1){
+        plaintext = (unsigned char*)malloc(1024);
+        ciphertext = (unsigned char*)malloc(1024);
+        cout << "Enter a message.." << endl;
+        cin >> plaintext;
+
+        ret = strlen((char*)plaintext);
+        len = gcm_encrypt(plaintext, ret, iv, 12, key, iv, 12, packet.ciphertext, packet.tag);
+
+        lmsg = htons(len);
+        if((ret = send(socket_d, (void*)&lmsg, sizeof(uint16_t), 0)) < 0)
+            error_handler("send() [lmsg] failed");
+
+        if((ret = send(socket_d, (void*)packet.ciphertext, len, 0)) < 0)
+            error_handler("send() [ciphertext] failed");
+
+        if((ret = send(socket_d, (void*)packet.tag, 16, 0)) < 0)
+            error_handler("send() [tag] failed");
+
+        memset(plaintext, 0, 1024);
+        memset(ciphertext, 0, 1024);
+        memset(tag, 0, 16);
+
+        if((ret = recv(socket_d, (void*)&lmsg, sizeof(uint16_t), 0)) < 0)
+            error_handler("recv() [lmsg] failed");
+
+        if((ret = recv(socket_d, (void*)ciphertext, len, 0)) < 0)
+            error_handler("recv() [ciphertext] failed");
+
+        if((ret = recv(socket_d, (void*)tag, 16, 0)) < 0)
+            error_handler("recv() [tag] failed");
+
+        gcm_decrypt(ciphertext, len, iv, 12, tag, key, iv, 12, plaintext);
+        cout << plaintext << endl;
     }
-    printf(">>> Socket creato correttamente!\n"); 
-    ret = connect(socket1, (struct sockaddr*)&sv_addr, sizeof(sv_addr));
-    if(ret < 0){
-        printf("Errore di connessione!\n");
-        exit(0);
-    }
-	
-	while(1){
-		resp_msg = (char*)malloc(128);
-		if(!resp_msg){
-			printf("Malloc failed!\n");
-			exit(0);
-		}
-        rcv_msg = (char*)malloc(128);
-		if(!rcv_msg){
-			printf("Malloc failed!\n");
-			exit(0);
-		}
-		if(i == 0){
-			printf("In attesa di un comando...\n");
-			fgets(resp_msg, 128, stdin);
-			fflush(stdin);
-		
-			len = strlen(resp_msg);
-			lmsg = htons(len);
-			ret = send(socket1, (void*)&lmsg, sizeof(uint16_t), 0);
-			if(ret < 0){
-				printf("Errore nella send di lmsg!\n");
-				exit(0);
-			}
-			ret = send(socket1, (void*)resp_msg, len, 0);
-			if(ret < 0){
-				printf("Errore nella send del buffer!\n");
-				exit(0);
-			}
-			i = 1;
-		}
-		ret = recv(socket1, (void*)&lmsg, sizeof(uint16_t), 0);
-		if(ret == 0){
-			printf(">>> Connessione col server persa!\n");
-			close(socket1);
-			exit(0);
-		}
-		if(ret < 0){
-			printf("Errore nella ricezione della risposta (dim) dal server (1)!\n");
-			exit(0);
-		}
-		len = ntohs(lmsg);
-		rcv_msg = (char*)malloc(len);
-		if(!rcv_msg){
-			printf("Malloc failed!\n");
-			exit(0);
-		}
-		ret = recv(socket1, (void*)rcv_msg, len, 0);
-		if(ret < 0){
-			printf("Errore nella ricezione della risposta (buf) dal server(1)!\n");
-			exit(0);
-		}
-		i = 0;
-	}
+    return 0; // inutile
 }
