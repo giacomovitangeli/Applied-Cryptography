@@ -107,3 +107,63 @@ int gcm_decrypt(unsigned char *cipher, int cipher_len,
 
 //	END CRYPTO UTILITY FUNCTIONS
 
+//	START UTILITY FUNCTIONS
+void print_man(){
+
+    cout<<endl<<"Welcome in the cloud manual:"<<endl<<endl;
+    cout<<"manual: man"<<endl;
+    cout<<"list: ls"<<endl;
+    cout<<"upload: up -[path/filename]"<<endl;
+    cout<<"download: dl -[filename]"<<endl;
+    cout<<"rename: mv -[old_filename] -[new_filename]"<<endl;
+    cout<<"delete: rm -[filename]"<<endl;
+    cout<<endl;
+}
+
+void check_cmd(unsigned char* plaintext, int* cmd){
+
+    if (strncmp((char *) plaintext, "man", 3) == 0) {
+        *cmd = 1;
+        return;
+    } else if (strncmp((char *) plaintext, "ls", 2) == 0) {
+        *cmd = 2;
+        return;
+    } else if (strncmp((char *) plaintext, "up", 2) == 0){
+        *cmd = 3;
+        //char* path = strtok((char *)plaintext, "-");
+        //cout<<path<<endl;
+
+
+        //cmd_to_sv = strtok(cmd_string, " ");
+        //check = strtok(NULL, " \n\0");
+
+        //fixme segmenta e stampa "up" al posto del filename
+        char * pch;
+        pch = strtok ((char*)plaintext," -\n\0");
+        while (pch != NULL)
+        {
+            printf ("%s\n", (char*)plaintext);
+            pch = strtok (NULL, " -\n\0");
+        }
+
+        //path = realpath(path, NULL);
+        //cout<<path<<endl;
+        /*
+        char *realpath(const char *restrict path,
+                       char *restrict resolved_path);
+        */
+    }else if(strncmp((char*)plaintext, "dl", 2) == 0) {
+        *cmd = 4;
+    }else if(strncmp((char*)plaintext, "mv", 2) == 0) {
+        *cmd = 5;
+    }else if(strncmp((char*)plaintext, "rm", 2) == 0) {
+        *cmd = 6;
+    }
+}
+
+//	END UTILITY FUNCTIONS
+
+
+
+
+

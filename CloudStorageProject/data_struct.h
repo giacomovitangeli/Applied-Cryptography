@@ -20,6 +20,7 @@
 #include <dirent.h>
 #include <iostream>
 #include <string>
+#include <limits.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 
@@ -44,7 +45,7 @@
 
 using namespace std;
 
-
+/*
 //  START DATA STRUCTURES
 struct aad_data {
     uint8_t		flag : 1;
@@ -69,8 +70,8 @@ struct packet {
     unsigned char 		tag[16];
     unsigned char		iv[12];
 };
-
 //  END DATA STRUCTURES
+*/
 
 
 // TEST ONLY
@@ -95,6 +96,13 @@ int gcm_decrypt(unsigned char *, int ,
                 unsigned char *, int,
                 unsigned char *);
 //	END CRYPTO UTILITY FUNCTIONS DECLARATIONS
+
+
+//	START UTILITY FUNCTIONS
+void print_man();
+void check_cmd(unsigned char*, int*);
+//	END UTILITY FUNCTIONS
+
 
 
 #endif //CLOUDSTORAGEPROJECT_DATA_STRUCT_H
