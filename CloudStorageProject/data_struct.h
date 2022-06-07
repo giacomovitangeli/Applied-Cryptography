@@ -23,25 +23,32 @@
 #include <limits.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
-
+#include <iomanip>
+#include <fstream>
 
 #define PORT 4242
 
 //  START MACRO COMMANDS
-#define UPLOAD 		0b001
-#define DOWNLOAD 	0b010
-#define DELETE		0b011
-#define LIST		0b100
-#define RENAME		0b101
-#define LOGOUT		0b110
+#define MAN		1
+#define LIST		2
+#define UPLOAD 		3
+#define DOWNLOAD 	4
+#define DELETE		5
+#define RENAME		6
+#define LOGOUT		7
 /*	special auth command at startup */
-#define AUTH		0b111
+#define AUTH		10
 //  END MACRO COMMANDS
 
 //  START SIZE LMIT
 #define MAX_FILE_NAME 	24
 #define MAX_FILSE_SIZE	2^^32
 //  END SIZE LIMIT
+
+#define TAG_LEN		16
+#define	IV_LEN		12
+#define NONCE_LEN	16
+#define DUMMY_BYTE	'x'
 
 using namespace std;
 
@@ -100,7 +107,10 @@ int gcm_decrypt(unsigned char *, int ,
 
 //	START UTILITY FUNCTIONS
 void print_man();
-void check_cmd(unsigned char*, int*);
+int check_cmd(char*);
+int get_cmd(char*);
+void serialize_int(int, unsigned char*);
+int read_payload(int);
 //	END UTILITY FUNCTIONS
 
 

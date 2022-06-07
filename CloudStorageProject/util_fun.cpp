@@ -120,47 +120,53 @@ void print_man(){
     cout<<endl;
 }
 
-void check_cmd(unsigned char* plaintext, int* cmd){
+int check_cmd(char* plaintext){
+ 
+    	char *ptr = strtok(plaintext, "-");
+	if(strlen(ptr) > 3 || strlen(ptr) < 2)
+		return -1;
+	
+	int command = get_cmd(ptr);
+	if(command < 0)
+		return -1;
 
-    if (strncmp((char *) plaintext, "man", 3) == 0) {
-        *cmd = 1;
-        return;
-    } else if (strncmp((char *) plaintext, "ls", 2) == 0) {
-        *cmd = 2;
-        return;
-    } else if (strncmp((char *) plaintext, "up", 2) == 0){
-        *cmd = 3;
-        //char* path = strtok((char *)plaintext, "-");
-        //cout<<path<<endl;
+	cout << command << endl;
 
-
-        //cmd_to_sv = strtok(cmd_string, " ");
-        //check = strtok(NULL, " \n\0");
-
-        //fixme segmenta e stampa "up" al posto del filename
-        char * pch;
-        pch = strtok ((char*)plaintext," -\n\0");
-        while (pch != NULL)
-        {
-            printf ("%s\n", (char*)plaintext);
-            pch = strtok (NULL, " -\n\0");
-        }
-
-        //path = realpath(path, NULL);
-        //cout<<path<<endl;
-        /*
-        char *realpath(const char *restrict path,
-                       char *restrict resolved_path);
-        */
-    }else if(strncmp((char*)plaintext, "dl", 2) == 0) {
-        *cmd = 4;
-    }else if(strncmp((char*)plaintext, "mv", 2) == 0) {
-        *cmd = 5;
-    }else if(strncmp((char*)plaintext, "rm", 2) == 0) {
-        *cmd = 6;
-    }
+	return command;
 }
 
+int get_cmd(char* cmd){
+	if(strncmp(cmd, "man", 3) == 0)
+		return 1;
+	if(strncmp(cmd, "ls", 2) == 0)
+		return 2;
+	if(strncmp(cmd, "up", 2) == 0)
+		return 3;
+	if(strncmp(cmd, "dl", 2) == 0)
+		return 4;
+	if(strncmp(cmd, "mv", 2) == 0)
+		return 5;
+	if(strncmp(cmd, "rm", 2) == 0)
+		return 6;
+	
+	return -1;
+}
+
+void serialize_int(int val, unsigned char *c){
+
+	c[0] =  val & 0xFF;
+	c[1] = (val>>8) & 0xFF;
+	c[2] = (val>>16) & 0xFF;
+	c[3] = (val>>24) & 0xFF;
+}
+
+int read_payload(int sock){
+	int ret, p_len;
+	if((ret = recv(sock, (void*)&p_len, sizeof(int), 0)) < 0)
+		return -1;
+
+	return p_len;
+}
 //	END UTILITY FUNCTIONS
 
 

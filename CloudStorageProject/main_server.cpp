@@ -6,14 +6,13 @@ using namespace std;
 
 /* TEST ONLY */
 unsigned char key[] = "password12345678password12345678";
-unsigned char iv[] = "123456789012";
+//unsigned char iv[] = "123456789012";
 /*	END*/
 
 
 int main(){
 
     int listner_socket, new_socket, ret, option = 1, k, fdmax;
-    unsigned char *resp_msg, *rcv_msg, tag[16], *plaintext, *ciphertext;
     uint16_t lmsg;
     struct sockaddr_in my_addr, client_addr;
 
@@ -25,16 +24,16 @@ int main(){
     FD_ZERO(&master);
     FD_ZERO(&read_set);
 
-    if((listner_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0) // Creazione listner
+    if((listner_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0)
         error_handler("socket creation failed");
 
-    /* VIRTUAL MACHINE TEST ONLY */
+    // VIRTUAL MACHINE TEST ONLY 
     setsockopt(listner_socket, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option));	//permette di riusare il solito indirizzo per il socket, necessario per provare senza dover spengere la virtual machine
-    /*	END	*/
+    //	END	
 
     cout << "> Socket created successfully!" << endl;
 
-    /*	Clean up and initialization	 */
+    //	Clean up and initialization	 
     memset(&my_addr, 0, sizeof(my_addr));
     my_addr.sin_family = AF_INET;
     my_addr.sin_port = htons(4242); //RANDOM port number
@@ -54,7 +53,7 @@ int main(){
     fdmax = listner_socket;
     len = sizeof(client_addr);
 
-    /*	Endless loop - Managing client(s) request(s) - Single process with multiple descriptors */
+    //	Endless loop - Managing client(s) request(s) - Single process with multiple descriptors 
 
     while(1){
         read_set = master;
@@ -70,15 +69,36 @@ int main(){
                         fdmax = new_socket;
                 }
                 else{ // Serving client request
+			int ct_len, aad_len, msg_len;
+			unsigned char *rcv_msg, *plaintext, *ciphertext, *tag, *iv;
 
-                    /* Setting envirorment */
+
+			msg_len = read_payload(k);
+			if(msg_len < 0)
+				error_handler("error reading payload length");
+
+			rcv_msg = (unsigned char*)malloc(msg_len);
+			if(!rcv_msg)
+				error_handler("malloc() [rcv_msg] failed");
+
+			if((ret = recv(k, (void*)rcv_msg, msg_len, 0)) < 0)
+				error_handler("recv() [rcv_msg] failed");
+
+			cout << "Messaggio ricevuto correttamente " << msg_len << endl;
+			return 0;
+
+
+
+
+/*
+                    // Setting envirorment 
                     if(!(plaintext = (unsigned char*)malloc(1024)))
                         error_handler("malloc() [plaintext] failed");
 
                     if(!(ciphertext = (unsigned char*)malloc(1024)))
                         error_handler("malloc() [ciphertext] failed");
 
-                    /* RICEVO LUNGHEZZA DEL MESSAGGIO+MESSAGGIO+TAG */
+                    
                     if((ret = recv(k, (void*)&lmsg, sizeof(uint16_t), 0)) < 0)
                         error_handler("recv() [lmsg] failed");
 
@@ -111,6 +131,7 @@ int main(){
                         error_handler("send() [tag] failed");
 
                     memset(plaintext, 0, 1024);
+*/
                 }
             }
         }
