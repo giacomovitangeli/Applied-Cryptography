@@ -117,6 +117,7 @@ void print_man(){
     cout<<"download: dl -[filename]"<<endl;
     cout<<"rename: mv -[old_filename] -[new_filename]"<<endl;
     cout<<"delete: rm -[filename]"<<endl;
+    cout<<"logout: lo"<<endl;
     cout<<endl;
 }
 
@@ -148,6 +149,8 @@ int get_cmd(char* cmd){
 		return 5;
 	if(strncmp(cmd, "rm", 2) == 0)
 		return 6;
+	if(strncmp(cmd, "lo", 2) == 0)
+		return 7;
 	
 	return -1;
 }
@@ -162,9 +165,9 @@ void serialize_int(int val, unsigned char *c){
 
 int read_byte(int sock, void *buf, ssize_t len){
 	ssize_t left = len;
-	int read, ret, i = 0;
+	int read, ret = 0;
 	char *ptr = (char*)buf;
-	cout << "Left prima del while: " << left << endl;
+	
 	while(left > 0){
 		if((read = recv(sock, (void*)ptr, left, 0)) < 0)
 			return -1;
@@ -175,8 +178,6 @@ int read_byte(int sock, void *buf, ssize_t len){
 		left -= read;
 		ptr += read;
 		ret += read;
-		i++;
-		cout << "Left: " << left << endl;
 	}
 
 	return ret;

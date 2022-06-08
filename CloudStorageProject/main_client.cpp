@@ -56,7 +56,7 @@ int main(){
                 	print_man();
                 	break;
 		}
-            case LIST:{	// ls command		[payload_len][aad_len]{[nonce][opcode]}[cyph_len][dummy_byte][tag][iv]
+            case LIST:{	// ls command		[payload_len][aad_len]{[opcode][nonce]}[cyph_len][dummy_byte][tag][iv]
 			int payload_len, ct_len, aad_len, rc, msg_len;
     			unsigned char /**rcv_msg,*/ *resp_msg, *tag, *iv, *ciphertext, *opcode, *nonce, *aad, *aad_len_byte, *payload_len_byte, *ct_len_byte;			
 		
@@ -64,16 +64,16 @@ int main(){
 			nonce = (unsigned char*)malloc(NONCE_LEN);
 			if(!nonce)
 				error_handler("malloc() [nonce] failed");
-			rc = RAND_bytes(nonce, sizeof(nonce));
+			rc = RAND_bytes(nonce, NONCE_LEN);
 			if(rc != 1)
 				error_handler("nonce generation failed");
 
 			iv = (unsigned char*)malloc(IV_LEN);
 			if(!iv)
 				error_handler("malloc() [iv] failed");
-			rc = RAND_bytes(iv, sizeof(iv));
+			rc = RAND_bytes(iv, IV_LEN);
 			if(rc != 1)
-				error_handler("nonce generation failed");
+				error_handler("iv generation failed");
 
 			tag = (unsigned char*)malloc(TAG_LEN);
 			if(!tag)
@@ -126,21 +126,19 @@ int main(){
 			if(!resp_msg)
 				error_handler("malloc() [resp_msg] failed");
 
-			memcpy(resp_msg, payload_len_byte, sizeof(int));	// 4 byte
-			memcpy((unsigned char*)&resp_msg[sizeof(int)], aad_len_byte, sizeof(int));	// 4 byte
-			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int)], aad, aad_len);	// 17 byte
-			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len], ct_len_byte, sizeof(int));	// 4 byte
-			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int)], ciphertext, ct_len);	// 1 byte
-			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len], tag, TAG_LEN);	// 16 byte
-			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN], iv, IV_LEN); // 12 byte
-			// tot: 58 byte
-			
+			memcpy(resp_msg, payload_len_byte, sizeof(int));
+			memcpy((unsigned char*)&resp_msg[sizeof(int)], aad_len_byte, sizeof(int));
+			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int)], aad, aad_len);
+			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len], ct_len_byte, sizeof(int));
+			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int)], ciphertext, ct_len);
+			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len], tag, TAG_LEN);
+			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN], iv, IV_LEN);
 			
 			//	SEND PACKET
 			if((ret = send(socket_d, (void*)resp_msg, msg_len, 0)) < 0)
             			error_handler("send() failed");
 
-			cout << "send() worked! " << payload_len << endl;
+			cout << "send() worked! " << msg_len << endl;
 			break;
 		}
             case UPLOAD:{	// up command
@@ -166,38 +164,6 @@ int main(){
 	//memset(plaintext, 0, 1024);
         //memset(ciphertext, 0, 1024);
         //memset(tag, 0, TAG_LEN);
-
-
-
-        /*ret = strlen((char*)plaintext);
-        len = gcm_encrypt(plaintext, ret, iv, 12, key, iv, 12, packet.ciphertext, packet.tag);
-
-        lmsg = htons(len);
-        if((ret = send(socket_d, (void*)&lmsg, sizeof(uint16_t), 0)) < 0)
-            error_handler("send() [lmsg] failed");
-
-        if((ret = send(socket_d, (void*)packet.ciphertext, len, 0)) < 0)
-            error_handler("send() [ciphertext] failed");
-
-        if((ret = send(socket_d, (void*)packet.tag, 16, 0)) < 0)
-            error_handler("send() [tag] failed");
-
-        memset(plaintext, 0, 1024);
-        memset(ciphertext, 0, 1024);
-        memset(tag, 0, 16);
-
-        if((ret = recv(socket_d, (void*)&lmsg, sizeof(uint16_t), 0)) < 0)
-            error_handler("recv() [lmsg] failed");
-
-        if((ret = recv(socket_d, (void*)ciphertext, len, 0)) < 0)
-            error_handler("recv() [ciphertext] failed");
-
-        if((ret = recv(socket_d, (void*)tag, 16, 0)) < 0)
-            error_handler("recv() [tag] failed");
-
-        gcm_decrypt(ciphertext, len, iv, 12, tag, key, iv, 12, plaintext);
-        cout << plaintext << endl;*/
-
 
     }
     return 0; //Unreachable code

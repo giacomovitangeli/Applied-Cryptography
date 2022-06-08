@@ -6,7 +6,6 @@ using namespace std;
 
 /* TEST ONLY */
 unsigned char key[] = "password12345678password12345678";
-//unsigned char iv[] = "123456789012";
 /*	END*/
 
 
@@ -69,7 +68,7 @@ int main(){
                         fdmax = new_socket;
                 }
                 else{ // Serving client request
-			int ct_len, aad_len, msg_len;
+			int ct_len, aad_len, msg_len, cmd;
 			unsigned char *rcv_msg, *plaintext, *ciphertext, *ct_len_byte, *aad_len_byte, *aad, *tag, *iv;
 
 
@@ -92,7 +91,6 @@ int main(){
 			if(ret == 0)
 				error_handler("nothing to read! 2");
 			memcpy(&aad_len, aad_len_byte, sizeof(int));
-
 			aad = (unsigned char*)malloc(aad_len);
 			if(!aad)
 				error_handler("malloc() [aad] failed");
@@ -100,7 +98,8 @@ int main(){
 				error_handler("recv() [aad] failed");
 			if(ret == 0)
 				error_handler("nothing to read! 3");
-
+			cmd = int(aad[0]) - 48;			
+			
 			//	READ CT_LEN & CIPHERTEXT
 			ct_len_byte = (unsigned char*)malloc(sizeof(int));
 			if(!ct_len_byte)
@@ -137,62 +136,87 @@ int main(){
 			if(ret == 0)
 				error_handler("nothing to read! 7");
 
-
 			//	DECRYPT CT
 			plaintext = (unsigned char*)malloc(ct_len + 1);
 			if(!plaintext)
 				error_handler("malloc() [plaintext] failed");
 			gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, key, iv, IV_LEN, plaintext);
-			
 
 			cout << "Messaggio ricevuto correttamente " << plaintext << endl;
+			
+			switch(cmd){
+				case 2:{	// ls 
+					DIR *dir;
+					struct dirent *en;
+					unsigned char *buf, *name_tmp, *ciphertext;
+					int dim = 0, dim_tmp = 0;
+
+					dir = opendir("franca");
+					if(dir){
+						while((en = readdir(dir)) != NULL){
+							if(!strcmp(en->d_name, ".") || !strcmp(en->d_name, ".."))
+								continue;
+					
+							//	calculate dim for buffer
+         						cout << en->d_name << endl;
+							dim += strlen(en->d_name); 
+							dim++;
+						}
+						closedir(dir);
+					}
+					else
+						error_handler("directory not found");
+					
+					dir = opendir("franca");
+					if(dir){
+						buf = (unsigned char*)malloc(dim-1);
+
+						while((en = readdir(dir)) != NULL){
+							if(!strcmp(en->d_name, ".") || !strcmp(en->d_name, ".."))
+								continue;
+							
+							//	copy file names into buf
+							name_tmp = (unsigned char*)malloc(strlen(en->d_name) + 1);
+         						strncpy((char*)name_tmp, en->d_name, strlen(en->d_name));
+							cout << "name tmp1: " << name_tmp << endl;
+							strcat((char*)name_tmp, "|");
+							cout << "name tmp2: " << name_tmp << endl;
+							strcat((char*)buf, (char*)name_tmp);
+						}
+						closedir(dir);
+						cout << "Buf: " << buf << endl;
+					}
+					else
+						error_handler("directory not found");
+					break;
+				}
+				case 3:{	// up
+				
+					break;
+				}
+				case 4:{	// dl
+
+					break;
+				}
+				case 5:{	// mv
+				
+					break;
+				}
+				case 6:{	// rn
+
+					break;
+				}
+				case 7:{	// logout
+			
+					break;
+				}
+				default:{
+					error_handler("command not found!");
+					break;
+				}
+			}
 			return 0;
 
-
-
-
-/*
-                    // Setting envirorment 
-                    if(!(plaintext = (unsigned char*)malloc(1024)))
-                        error_handler("malloc() [plaintext] failed");
-
-                    if(!(ciphertext = (unsigned char*)malloc(1024)))
-                        error_handler("malloc() [ciphertext] failed");
-
-                    
-                    if((ret = recv(k, (void*)&lmsg, sizeof(uint16_t), 0)) < 0)
-                        error_handler("recv() [lmsg] failed");
-
-                    len = ntohs(lmsg);
-
-                    if((ret = recv(k, (void*)ciphertext, len, 0)) < 0)
-                        error_handler("recv() [ciphertext] failed");
-
-                    if((ret = recv(k, (void*)tag, 16, 0)) < 0)
-                        error_handler("recv() [tag] failed");
-
-                    gcm_decrypt(ciphertext, len, iv, 12, tag, key, iv, 12, plaintext);
-                    cout << plaintext << endl;
-
-
-                    memset(ciphertext, 0, 1024);
-                    memset(tag, 0, 16);
-
-                    ret = strlen((char*)plaintext);
-                    len = gcm_encrypt(plaintext, ret, iv, 12, key, iv, 12, ciphertext, tag);
-
-                    lmsg = htons(len);
-                    if((ret = send(k, (void*)&lmsg, sizeof(uint16_t), 0)) < 0)
-                        error_handler("send() [lmsg] failed");
-
-                    if((ret = send(k, (void*)ciphertext, len, 0)) < 0)
-                        error_handler("send() [ciphertext] failed");
-
-                    if((ret = send(k, (void*)tag, 16, 0)) < 0)
-                        error_handler("send() [tag] failed");
-
-                    memset(plaintext, 0, 1024);
-*/
                 }
             }
         }
