@@ -80,7 +80,7 @@ int main(){
 			if((ret = read_byte(k, (void*)rcv_msg, sizeof(int))) < 0)
 				error_handler("recv() [rcv_msg] failed");
 			if(ret == 0)
-				error_handler("nothing to read!");
+				error_handler("nothing to read! 1");
 			memcpy(&msg_len, rcv_msg, sizeof(int));
 
 			//	READ AAD_LEN & AAD
@@ -90,7 +90,7 @@ int main(){
 			if((ret = read_byte(k, (void*)aad_len_byte, sizeof(int))) < 0)
 				error_handler("recv() [aad_len_byte] failed");
 			if(ret == 0)
-				error_handler("nothing to read!");
+				error_handler("nothing to read! 2");
 			memcpy(&aad_len, aad_len_byte, sizeof(int));
 
 			aad = (unsigned char*)malloc(aad_len);
@@ -99,7 +99,7 @@ int main(){
 			if((ret = read_byte(k, (void*)aad, aad_len)) < 0)
 				error_handler("recv() [aad] failed");
 			if(ret == 0)
-				error_handler("nothing to read!");
+				error_handler("nothing to read! 3");
 
 			//	READ CT_LEN & CIPHERTEXT
 			ct_len_byte = (unsigned char*)malloc(sizeof(int));
@@ -108,7 +108,7 @@ int main(){
 			if((ret = read_byte(k, (void*)ct_len_byte, sizeof(int))) < 0)
 				error_handler("recv() [ct_len_byte] failed");
 			if(ret == 0)
-				error_handler("nothing to read!");
+				error_handler("nothing to read! 4");
 			memcpy(&ct_len, ct_len_byte, sizeof(int));
 
 			ciphertext = (unsigned char*)malloc(ct_len);
@@ -117,7 +117,7 @@ int main(){
 			if((ret = read_byte(k, (void*)ciphertext, ct_len)) < 0)
 				error_handler("recv() [ciphertext] failed");
 			if(ret == 0)
-				error_handler("nothing to read!");
+				error_handler("nothing to read! 5");
 
 			//	READ TAG
 			tag = (unsigned char*)malloc(TAG_LEN);
@@ -126,7 +126,7 @@ int main(){
 			if((ret = read_byte(k, (void*)tag, TAG_LEN)) < 0)
 				error_handler("recv() [tag] failed");
 			if(ret == 0)
-				error_handler("nothing to read!");
+				error_handler("nothing to read! 6");
 
 			//	READ IV
 			iv = (unsigned char*)malloc(IV_LEN);
@@ -135,7 +135,8 @@ int main(){
 			if((ret = read_byte(k, (void*)iv, IV_LEN)) < 0)
 				error_handler("recv() [iv] failed");
 			if(ret == 0)
-				error_handler("nothing to read!");
+				error_handler("nothing to read! 7");
+
 
 			//	DECRYPT CT
 			plaintext = (unsigned char*)malloc(ct_len + 1);

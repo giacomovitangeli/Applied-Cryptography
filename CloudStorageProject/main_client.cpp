@@ -12,7 +12,7 @@ unsigned char key[] = "password12345678password12345678";
 
 int main(){
 
-    int socket_d, len, ret, cmd;
+    int socket_d, ret, cmd;
     unsigned char *plaintext, *command_copy;
     //uint16_t lmsg;
     struct sockaddr_in sv_addr;
@@ -105,13 +105,13 @@ int main(){
 
 			//	CIPHERTEXT LEN SERIALIZATION
 			plaintext[0] = DUMMY_BYTE;
-			len = gcm_encrypt(plaintext, sizeof(char), aad, aad_len, key, iv, IV_LEN, ciphertext, tag);
-			if(len <= 0) 
+			ct_len = gcm_encrypt(plaintext, sizeof(char), aad, aad_len, key, iv, IV_LEN, ciphertext, tag);
+			if(ct_len <= 0) 
 				error_handler("encrypt() failed");
-			ct_len_byte = (unsigned char*)malloc(len);
+			ct_len_byte = (unsigned char*)malloc(ct_len);
 			if(!ct_len_byte)
 				error_handler("malloc() [ct_len_byte] failed");
-			serialize_int(len, ct_len_byte);
+			serialize_int(ct_len, ct_len_byte);
 
 			//	PAYLOAD LEN SERIALIZATION
 			payload_len = sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;
@@ -121,18 +121,19 @@ int main(){
 			serialize_int(payload_len, payload_len_byte);
 
 			//	BUILD MESSAGE (resp_msg)
-			msg_len = sizeof(int) + aad_len + sizeof(int) + len + TAG_LEN + IV_LEN;
+			msg_len = sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;
 			resp_msg = (unsigned char*)malloc(msg_len);
 			if(!resp_msg)
 				error_handler("malloc() [resp_msg] failed");
 
-			memcpy(resp_msg, payload_len_byte, sizeof(int));
-			memcpy((unsigned char*)&resp_msg[sizeof(int)], aad_len_byte, sizeof(int));
-			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int)], aad, aad_len);
-			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len], ct_len_byte, sizeof(int));
-			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int)], ciphertext, len);
-			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int) + len], tag, TAG_LEN);
-			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int) + len + TAG_LEN], iv, IV_LEN);
+			memcpy(resp_msg, payload_len_byte, sizeof(int));	// 4 byte
+			memcpy((unsigned char*)&resp_msg[sizeof(int)], aad_len_byte, sizeof(int));	// 4 byte
+			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int)], aad, aad_len);	// 17 byte
+			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len], ct_len_byte, sizeof(int));	// 4 byte
+			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int)], ciphertext, ct_len);	// 1 byte
+			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len], tag, TAG_LEN);	// 16 byte
+			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN], iv, IV_LEN); // 12 byte
+			// tot: 58 byte
 			
 			
 			//	SEND PACKET

@@ -162,9 +162,9 @@ void serialize_int(int val, unsigned char *c){
 
 int read_byte(int sock, void *buf, ssize_t len){
 	ssize_t left = len;
-	int read, ret;
+	int read, ret, i = 0;
 	char *ptr = (char*)buf;
-
+	cout << "Left prima del while: " << left << endl;
 	while(left > 0){
 		if((read = recv(sock, (void*)ptr, left, 0)) < 0)
 			return -1;
@@ -175,6 +175,8 @@ int read_byte(int sock, void *buf, ssize_t len){
 		left -= read;
 		ptr += read;
 		ret += read;
+		i++;
+		cout << "Left: " << left << endl;
 	}
 
 	return ret;
