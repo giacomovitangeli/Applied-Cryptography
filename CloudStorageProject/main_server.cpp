@@ -70,21 +70,81 @@ int main(){
                 }
                 else{ // Serving client request
 			int ct_len, aad_len, msg_len;
-			unsigned char *rcv_msg, *plaintext, *ciphertext, *tag, *iv;
+			unsigned char *rcv_msg, *plaintext, *ciphertext, *ct_len_byte, *aad_len_byte, *aad, *tag, *iv;
 
 
-			msg_len = read_payload(k);
-			if(msg_len < 0)
-				error_handler("error reading payload length");
-
-			rcv_msg = (unsigned char*)malloc(msg_len);
+			//	READ PAYLOAD_LEN
+			rcv_msg = (unsigned char*)malloc(sizeof(int));
 			if(!rcv_msg)
 				error_handler("malloc() [rcv_msg] failed");
-
-			if((ret = recv(k, (void*)rcv_msg, msg_len, 0)) < 0)
+			if((ret = read_byte(k, (void*)rcv_msg, sizeof(int))) < 0)
 				error_handler("recv() [rcv_msg] failed");
+			if(ret == 0)
+				error_handler("nothing to read!");
+			memcpy(&msg_len, rcv_msg, sizeof(int));
 
-			cout << "Messaggio ricevuto correttamente " << msg_len << endl;
+			//	READ AAD_LEN & AAD
+			aad_len_byte = (unsigned char*)malloc(sizeof(int));
+			if(!aad_len_byte)
+				error_handler("malloc() [aad_len_byte] failed");
+			if((ret = read_byte(k, (void*)aad_len_byte, sizeof(int))) < 0)
+				error_handler("recv() [aad_len_byte] failed");
+			if(ret == 0)
+				error_handler("nothing to read!");
+			memcpy(&aad_len, aad_len_byte, sizeof(int));
+
+			aad = (unsigned char*)malloc(aad_len);
+			if(!aad)
+				error_handler("malloc() [aad] failed");
+			if((ret = read_byte(k, (void*)aad, aad_len)) < 0)
+				error_handler("recv() [aad] failed");
+			if(ret == 0)
+				error_handler("nothing to read!");
+
+			//	READ CT_LEN & CIPHERTEXT
+			ct_len_byte = (unsigned char*)malloc(sizeof(int));
+			if(!ct_len_byte)
+				error_handler("malloc() [ct_len_byte] failed");
+			if((ret = read_byte(k, (void*)ct_len_byte, sizeof(int))) < 0)
+				error_handler("recv() [ct_len_byte] failed");
+			if(ret == 0)
+				error_handler("nothing to read!");
+			memcpy(&ct_len, ct_len_byte, sizeof(int));
+
+			ciphertext = (unsigned char*)malloc(ct_len);
+			if(!ciphertext)
+				error_handler("malloc() [cyphertext] failed");
+			if((ret = read_byte(k, (void*)ciphertext, ct_len)) < 0)
+				error_handler("recv() [ciphertext] failed");
+			if(ret == 0)
+				error_handler("nothing to read!");
+
+			//	READ TAG
+			tag = (unsigned char*)malloc(TAG_LEN);
+			if(!tag)
+				error_handler("malloc() [tag] failed");
+			if((ret = read_byte(k, (void*)tag, TAG_LEN)) < 0)
+				error_handler("recv() [tag] failed");
+			if(ret == 0)
+				error_handler("nothing to read!");
+
+			//	READ IV
+			iv = (unsigned char*)malloc(IV_LEN);
+			if(!iv)
+				error_handler("malloc() [iv] failed");
+			if((ret = read_byte(k, (void*)iv, IV_LEN)) < 0)
+				error_handler("recv() [iv] failed");
+			if(ret == 0)
+				error_handler("nothing to read!");
+
+			//	DECRYPT CT
+			plaintext = (unsigned char*)malloc(ct_len + 1);
+			if(!plaintext)
+				error_handler("malloc() [plaintext] failed");
+			gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, key, iv, IV_LEN, plaintext);
+			
+
+			cout << "Messaggio ricevuto correttamente " << plaintext << endl;
 			return 0;
 
 

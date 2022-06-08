@@ -110,7 +110,7 @@ void print_man();
 int check_cmd(char*);
 int get_cmd(char*);
 void serialize_int(int, unsigned char*);
-int read_payload(int);
+int read_byte(int, void*, ssize_t);
 //	END UTILITY FUNCTIONS
 
 

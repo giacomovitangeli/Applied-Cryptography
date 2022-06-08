@@ -130,7 +130,7 @@ int check_cmd(char* plaintext){
 	if(command < 0)
 		return -1;
 
-	cout << command << endl;
+	cout << "Command: " << command << endl;
 
 	return command;
 }
@@ -160,12 +160,24 @@ void serialize_int(int val, unsigned char *c){
 	c[3] = (val>>24) & 0xFF;
 }
 
-int read_payload(int sock){
-	int ret, p_len;
-	if((ret = recv(sock, (void*)&p_len, sizeof(int), 0)) < 0)
-		return -1;
+int read_byte(int sock, void *buf, ssize_t len){
+	ssize_t left = len;
+	int read, ret;
+	char *ptr = (char*)buf;
 
-	return p_len;
+	while(left > 0){
+		if((read = recv(sock, (void*)ptr, left, 0)) < 0)
+			return -1;
+
+		if(read == 0)
+			return 0;
+
+		left -= read;
+		ptr += read;
+		ret += read;
+	}
+
+	return ret;
 }
 //	END UTILITY FUNCTIONS
 

@@ -56,8 +56,8 @@ int main(){
                 	print_man();
                 	break;
 		}
-            case LIST:{	// ls command		[payload_len][nonce][opcode][cyph_len][dummy_byte][tag][iv]
-			int payload_len, aad_len, rc, msg_len;
+            case LIST:{	// ls command		[payload_len][aad_len]{[nonce][opcode]}[cyph_len][dummy_byte][tag][iv]
+			int payload_len, ct_len, aad_len, rc, msg_len;
     			unsigned char /**rcv_msg,*/ *resp_msg, *tag, *iv, *ciphertext, *opcode, *nonce, *aad, *aad_len_byte, *payload_len_byte, *ct_len_byte;			
 		
 			//	MALLOC & RAND VARIABLES
@@ -114,7 +114,7 @@ int main(){
 			serialize_int(len, ct_len_byte);
 
 			//	PAYLOAD LEN SERIALIZATION
-			payload_len = NONCE_LEN + sizeof(unsigned char) + sizeof(int) + len + TAG_LEN + IV_LEN;
+			payload_len = sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;
 			payload_len_byte = (unsigned char*)malloc(sizeof(int));
 			if(!payload_len_byte)
 				error_handler("malloc() [payload_len_byte] failed");
@@ -127,11 +127,12 @@ int main(){
 				error_handler("malloc() [resp_msg] failed");
 
 			memcpy(resp_msg, payload_len_byte, sizeof(int));
-			memcpy((unsigned char*)&resp_msg[sizeof(int)], aad, aad_len);
-			memcpy((unsigned char*)&resp_msg[sizeof(int) + aad_len], ct_len_byte, sizeof(int));
-			memcpy((unsigned char*)&resp_msg[sizeof(int) + aad_len + sizeof(int)], ciphertext, len);
-			memcpy((unsigned char*)&resp_msg[sizeof(int) + aad_len + sizeof(int) + len], tag, TAG_LEN);
-			memcpy((unsigned char*)&resp_msg[sizeof(int) + aad_len + sizeof(int) + len + TAG_LEN], iv, IV_LEN);
+			memcpy((unsigned char*)&resp_msg[sizeof(int)], aad_len_byte, sizeof(int));
+			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int)], aad, aad_len);
+			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len], ct_len_byte, sizeof(int));
+			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int)], ciphertext, len);
+			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int) + len], tag, TAG_LEN);
+			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int) + len + TAG_LEN], iv, IV_LEN);
 			
 			
 			//	SEND PACKET
