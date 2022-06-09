@@ -49,7 +49,7 @@
 #define	IV_LEN		12
 #define NONCE_LEN	16
 #define DUMMY_BYTE	'x'
-
+#define OFFSET		48
 using namespace std;
 
 //	START CRYPTO UTILITY FUNCTIONS DECLARATIONS
@@ -75,6 +75,7 @@ int check_cmd(char*);
 int get_cmd(char*);
 void serialize_int(int, unsigned char*);
 int read_byte(int, void*, ssize_t);
+int get_num_file(char*);
 //	END UTILITY FUNCTIONS
 
 

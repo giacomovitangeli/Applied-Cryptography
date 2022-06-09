@@ -12,7 +12,7 @@ unsigned char key[] = "password12345678password12345678";
 int main(){
 
     int listner_socket, new_socket, ret, option = 1, k, fdmax;
-    uint16_t lmsg;
+    //uint16_t lmsg;
     struct sockaddr_in my_addr, client_addr;
 
     fd_set master;
@@ -98,7 +98,7 @@ int main(){
 				error_handler("recv() [aad] failed");
 			if(ret == 0)
 				error_handler("nothing to read! 3");
-			cmd = int(aad[0]) - 48;			
+			cmd = int(aad[0]) - OFFSET;			
 			
 			//	READ CT_LEN & CIPHERTEXT
 			ct_len_byte = (unsigned char*)malloc(sizeof(int));
@@ -142,15 +142,16 @@ int main(){
 				error_handler("malloc() [plaintext] failed");
 			gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, key, iv, IV_LEN, plaintext);
 
-			cout << "Messaggio ricevuto correttamente " << plaintext << endl;
+			//cout << "Messaggio ricevuto correttamente " << plaintext << endl;
 			
 			switch(cmd){
 				case 2:{	// ls 
 					DIR *dir;
 					struct dirent *en;
-					unsigned char *buf, *name_tmp, *ciphertext;
-					int dim = 0, dim_tmp = 0;
+					unsigned char *buf, *name_tmp/*, *ciphertext*/;
+					int dim = 0, count = 0, num_file = 0;
 
+					num_file = get_num_file("franca");
 					dir = opendir("franca");
 					if(dir){
 						while((en = readdir(dir)) != NULL){
@@ -169,19 +170,25 @@ int main(){
 					
 					dir = opendir("franca");
 					if(dir){
-						buf = (unsigned char*)malloc(dim-1);
-
+						buf = (unsigned char*)malloc(dim+1);
 						while((en = readdir(dir)) != NULL){
 							if(!strcmp(en->d_name, ".") || !strcmp(en->d_name, ".."))
 								continue;
 							
 							//	copy file names into buf
-							name_tmp = (unsigned char*)malloc(strlen(en->d_name) + 1);
-         						strncpy((char*)name_tmp, en->d_name, strlen(en->d_name));
-							cout << "name tmp1: " << name_tmp << endl;
-							strcat((char*)name_tmp, "|");
-							cout << "name tmp2: " << name_tmp << endl;
-							strcat((char*)buf, (char*)name_tmp);
+							name_tmp = (unsigned char*)malloc(strlen(en->d_name) + 2);
+         						name_tmp = (unsigned char*)strncpy((char*)name_tmp, en->d_name, strlen(en->d_name));
+							//cout << "name tmp1: " << name_tmp << endl;
+							if(num_file > 1)
+								name_tmp = (unsigned char*)strncat((char*)name_tmp, "|", sizeof(char));
+							//cout << "name tmp2: " << name_tmp << endl;
+							if(count == 0)
+								buf = (unsigned char*)strncpy((char*)buf, (char*)name_tmp, strlen((char*)name_tmp) + 1);
+							else
+								buf = (unsigned char*)strncat((char*)buf, (char*)name_tmp, (strlen((char*)name_tmp) + 1));
+
+							count++;
+							num_file--;
 						}
 						closedir(dir);
 						cout << "Buf: " << buf << endl;

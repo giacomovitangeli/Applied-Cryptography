@@ -182,6 +182,27 @@ int read_byte(int sock, void *buf, ssize_t len){
 
 	return ret;
 }
+
+int get_num_file(char *dir_name){
+	DIR *dir;
+	struct dirent *en;
+	int count = 0;
+
+	dir = opendir(dir_name);
+	if(dir){
+		while((en = readdir(dir)) != NULL){
+			if(!strcmp(en->d_name, ".") || !strcmp(en->d_name, ".."))
+				continue;
+				
+			count++;
+		}
+	}
+	else
+		return -1;
+
+	closedir(dir);
+	return count;
+}
 //	END UTILITY FUNCTIONS
 
 
