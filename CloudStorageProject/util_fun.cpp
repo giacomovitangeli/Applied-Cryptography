@@ -121,17 +121,46 @@ void print_man(){
     cout<<endl;
 }
 
-int check_cmd(char* plaintext){
+int check_cmd(char *plaintext, char *path1, char *path2){
  
     	char *ptr = strtok(plaintext, "-");
+
 	if(strlen(ptr) > 3 || strlen(ptr) < 2)
 		return -1;
 	
 	int command = get_cmd(ptr);
+	if(command > 2 && command < 7){
+		ptr = strtok(NULL, "-");
+		if(command == 5){
+			strncpy(path1, ptr, strlen(ptr));
+			path1 = realpath(ptr, NULL);
+			if(!path1)
+				return -2;
+			if(strncmp(path1, "/home/", strlen("/home/")) != 0){
+				free(path1);
+				return -2;
+			}
+			ptr = strtok(NULL, "-");
+			strncpy(path2, ptr, strlen(ptr));
+			path2 = realpath(ptr, NULL);
+			if(!path2)
+				return -2;
+			if(strncmp(path2, "/home/", strlen("/home/")) != 0){
+				free(path2);
+				return -2;
+			}
+		}
+		path1 = realpath(ptr, NULL);
+		if(!path1)
+			return -2;
+		if(strncmp(path1, "/home/", strlen("/home/")) != 0){
+			free(path1);
+			return -2;
+		}
+	}
+
 	if(command < 0)
 		return -1;
-
-	cout << "Command: " << command << endl;
 
 	return command;
 }
@@ -183,7 +212,7 @@ int read_byte(int sock, void *buf, ssize_t len){
 	return ret;
 }
 
-int get_num_file(char *dir_name){
+int get_num_file(const char *dir_name){
 	DIR *dir;
 	struct dirent *en;
 	int count = 0;
@@ -203,6 +232,15 @@ int get_num_file(char *dir_name){
 	closedir(dir);
 	return count;
 }
+
+/*unsigned char * check_malloc(ssize_t dim){
+	unsigned char *buf;
+	buf = (unsigned char*)malloc(dim);
+	if(!buf)
+		return NULL;
+
+	return buf;
+}*/
 //	END UTILITY FUNCTIONS
 
 
