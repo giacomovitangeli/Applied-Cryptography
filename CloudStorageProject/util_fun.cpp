@@ -142,7 +142,7 @@ void print_man(){
     cout<<endl;
 }
 
-int check_cmd(char *plaintext, char *path1, char *path2){
+int check_cmd(char *plaintext, char *path1, char *path2){	//	Implement whitelist
  
     	char *ptr = strtok(plaintext, "-");
 
@@ -254,14 +254,12 @@ int get_num_file(const char *dir_name){
 	return count;
 }
 
-/*unsigned char * check_malloc(ssize_t dim){
-	unsigned char *buf;
-	buf = (unsigned char*)malloc(dim);
-	if(!buf)
-		return NULL;
+void free_var(int n, unsigned char *buf[20]){	// Buffer allocated with malloc() pointers, multiple free()
+	for(int i = 0; i < n; i++){
+		free((void*)buf[n]);
+	}
+}
 
-	return buf;
-}*/
 //	END UTILITY FUNCTIONS
 
 

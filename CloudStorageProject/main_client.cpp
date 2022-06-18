@@ -12,8 +12,8 @@ unsigned char key[] = "password12345678password12345678";
 
 int main(){
 
-    int socket_d, ret, cmd;
-    unsigned char *command, *command_copy;
+    int socket_d, ret, cmd, index_free_buf = 0;
+    unsigned char *command, *command_copy, *free_buf[20];
     char *path1 = 0, *path2 = 0;
     //uint16_t lmsg;
     struct sockaddr_in sv_addr;
@@ -73,33 +73,72 @@ int main(){
 		
 			if(strlen((char*)command) > 2)
 				error_handler("Command not found. Type 'man' for the Manual");
+
 			//	MALLOC & RAND VARIABLES
 			nonce = (unsigned char*)malloc(NONCE_LEN);
-			if(!nonce)
+			if(!nonce){
 				error_handler("malloc() [nonce] failed");
+				close(socket_d);
+				exit(0);
+			}
+
+			free_buf[index_free_buf] = nonce;
+			index_free_buf++;
 			rc = RAND_bytes(nonce, NONCE_LEN);
-			if(rc != 1)
+			if(rc != 1){
 				error_handler("nonce generation failed");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
 
 			iv = (unsigned char*)malloc(IV_LEN);
-			if(!iv)
+			if(!iv){
 				error_handler("malloc() [iv] failed");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			free_buf[index_free_buf] = iv;
+			index_free_buf++;
 			rc = RAND_bytes(iv, IV_LEN);
-			if(rc != 1)
+			if(rc != 1){
 				error_handler("iv generation failed");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
 
 			tag = (unsigned char*)malloc(TAG_LEN);
-			if(!tag)
+			if(!tag){
 				error_handler("malloc() [tag] failed");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			free_buf[index_free_buf] = tag;
+			index_free_buf++;
 			
 			opcode = (unsigned char*)malloc(1);
-			if(!opcode)
+			if(!opcode){
 				error_handler("malloc() [opcode] failed");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			free_buf[index_free_buf] = opcode;
+			index_free_buf++;
 			opcode[0] = '2';
 
 			ciphertext = (unsigned char*)malloc(512);
-			if(!ciphertext)
+			if(!ciphertext){
 				error_handler("malloc() [ciphertext] failed");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			free_buf[index_free_buf] = ciphertext;
+			index_free_buf++;
 			memset(ciphertext, 0, 512);
 
 			//	SERIALIZATION
@@ -107,40 +146,80 @@ int main(){
 			//	AAD SERIALIZATION
 			aad_len = 1 + NONCE_LEN;	//opcode + lunghezza nonce -- opcode = unsigned char
 			aad = (unsigned char*)malloc(aad_len);
-			if(!aad)
+			if(!aad){
 				error_handler("malloc() [aad] failed");
-			aad_len_byte = (unsigned char*)malloc(aad_len);	//now unused, later will see
-			if(!aad_len_byte)
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			free_buf[index_free_buf] = aad;
+			index_free_buf++;
+			aad_len_byte = (unsigned char*)malloc(aad_len);	
+			if(!aad_len_byte){
 				error_handler("malloc() [aad_len_byte] failed");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			free_buf[index_free_buf] = aad_len_byte;
+			index_free_buf++;
 			serialize_int(aad_len, aad_len_byte);
 			memcpy(aad, opcode, sizeof(unsigned char));
 			memcpy(&aad[1], nonce, NONCE_LEN);
 
 			//	CIPHERTEXT LEN SERIALIZATION
 			plaintext = (unsigned char*)malloc(512);
-			if(!plaintext)
+			if(!plaintext){
 				error_handler("malloc() [plaintext] failed");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			free_buf[index_free_buf] = plaintext;
+			index_free_buf++;
 			plaintext[0] = DUMMY_BYTE;
 			ct_len = gcm_encrypt(plaintext, sizeof(char), aad, aad_len, key, iv, IV_LEN, ciphertext, tag);
-			if(ct_len <= 0) 
+			if(ct_len <= 0){ 
 				error_handler("encrypt() failed");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
 			ct_len_byte = (unsigned char*)malloc(ct_len);
-			if(!ct_len_byte)
+			if(!ct_len_byte){
 				error_handler("malloc() [ct_len_byte] failed");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			free_buf[index_free_buf] = ct_len_byte;
+			index_free_buf++;
 			serialize_int(ct_len, ct_len_byte);
 
 			//	PAYLOAD LEN SERIALIZATION
 			payload_len = sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;
 			payload_len_byte = (unsigned char*)malloc(sizeof(int));
-			if(!payload_len_byte)
+			if(!payload_len_byte){
 				error_handler("malloc() [payload_len_byte] failed");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			free_buf[index_free_buf] = payload_len_byte;
+			index_free_buf++;
 			serialize_int(payload_len, payload_len_byte);
 
 			//	BUILD MESSAGE (resp_msg)
 			msg_len = sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;
 			resp_msg = (unsigned char*)malloc(msg_len);
-			if(!resp_msg)
+			if(!resp_msg){
 				error_handler("malloc() [resp_msg] failed");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			free_buf[index_free_buf] = resp_msg;
+			index_free_buf++;
 
 			memcpy(resp_msg, payload_len_byte, sizeof(int));
 			memcpy((unsigned char*)&resp_msg[sizeof(int)], aad_len_byte, sizeof(int));
@@ -151,8 +230,12 @@ int main(){
 			memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN], iv, IV_LEN);
 			
 			//	SEND PACKET
-			if((ret = send(socket_d, (void*)resp_msg, msg_len, 0)) < 0)
+			if((ret = send(socket_d, (void*)resp_msg, msg_len, 0)) < 0){
             			error_handler("send() failed");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
 
 			cout << endl << endl;
 
@@ -175,62 +258,131 @@ int main(){
 
 			//	READ PAYLOAD_LEN
 			rcv_msg = (unsigned char*)malloc(sizeof(int));
-			if(!rcv_msg)
+			if(!rcv_msg){
 				error_handler("malloc() [rcv_msg] failed");
-			if((ret = read_byte(socket_d, (void*)rcv_msg, sizeof(int))) < 0)
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			free_buf[index_free_buf] = rcv_msg;
+			index_free_buf++;
+			if((ret = read_byte(socket_d, (void*)rcv_msg, sizeof(int))) < 0){
 				error_handler("recv() [rcv_msg] failed");
-			if(ret == 0)
-				error_handler("nothing to read! 1");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			if(ret == 0){
+				error_handler("nothing to read! 1");	// seg fault if server down -- #malloc = 12, index = 12
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
 			memcpy(&msg_len, rcv_msg, sizeof(int));
 
 			//	READ AAD_LEN & AAD
-			if((ret = read_byte(socket_d, (void*)aad_len_byte, sizeof(int))) < 0)
+			if((ret = read_byte(socket_d, (void*)aad_len_byte, sizeof(int))) < 0){
 				error_handler("recv() [aad_len_byte] failed");
-			if(ret == 0)
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			if(ret == 0){
 				error_handler("nothing to read! 2");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
 			memcpy(&aad_len, aad_len_byte, sizeof(int));
-			if((ret = read_byte(socket_d, (void*)aad, aad_len)) < 0)
+			if((ret = read_byte(socket_d, (void*)aad, aad_len)) < 0){
 				error_handler("recv() [aad] failed");
-			if(ret == 0)
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			if(ret == 0){
 				error_handler("nothing to read! 3");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
 			cmd = int(aad[0]) - OFFSET;			
 			
 			//	READ CT_LEN & CIPHERTEXT
-			if((ret = read_byte(socket_d, (void*)ct_len_byte, sizeof(int))) < 0)
+			if((ret = read_byte(socket_d, (void*)ct_len_byte, sizeof(int))) < 0){
 				error_handler("recv() [ct_len_byte] failed");
-			if(ret == 0)
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			if(ret == 0){
 				error_handler("nothing to read! 4");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
 			memcpy(&ct_len, ct_len_byte, sizeof(int));
 
-			if((ret = read_byte(socket_d, (void*)ciphertext, ct_len)) < 0)
+			if((ret = read_byte(socket_d, (void*)ciphertext, ct_len)) < 0){
 				error_handler("recv() [ciphertext] failed");
-			if(ret == 0)
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			if(ret == 0){
 				error_handler("nothing to read! 5");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
 
 			//	READ TAG
-			if((ret = read_byte(socket_d, (void*)tag, TAG_LEN)) < 0)
+			if((ret = read_byte(socket_d, (void*)tag, TAG_LEN)) < 0){
 				error_handler("recv() [tag] failed");
-			if(ret == 0)
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			if(ret == 0){
 				error_handler("nothing to read! 6");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
 
 			//	READ IV
-			if((ret = read_byte(socket_d, (void*)iv, IV_LEN)) < 0)
+			if((ret = read_byte(socket_d, (void*)iv, IV_LEN)) < 0){
 				error_handler("recv() [iv] failed");
-			if(ret == 0)
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
+			if(ret == 0){
 				error_handler("nothing to read! 7");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
 
 			//	DECRYPT CT
-			gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, key, iv, IV_LEN, plaintext);
+			ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, key, iv, IV_LEN, plaintext);
+			if(ret < 0){
+				error_handler("decrypt failed");
+				free_var(index_free_buf, free_buf);
+				close(socket_d);
+				exit(0);
+			}
 			cout << "These are the files in your cloud folder: " << endl;
 			char *token = strtok((char*)plaintext, "|");
 			while(token != NULL){
 				cout << token << endl;
 				token = strtok(NULL, "|");
 			}
+			index_free_buf = 0;
 			break;
 		}
             case UPLOAD:{	// up command
-		
+			
 			break;
 		}
             case DOWNLOAD:{	// dl command

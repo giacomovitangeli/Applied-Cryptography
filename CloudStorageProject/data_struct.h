@@ -76,6 +76,7 @@ int get_cmd(char*);
 void serialize_int(int, unsigned char*);
 int read_byte(int, void*, ssize_t);
 int get_num_file(const char*);
+void free_var(int, unsigned char**);
 //	END UTILITY FUNCTIONS
 
 
