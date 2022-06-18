@@ -9,9 +9,8 @@ using namespace std;
 //	START CRYPTO UTILITY FUNCTIONS
 
 void error_handler(const string err){
-    cout << "Errore: " << err << endl;
-    exit(0);
-}
+	cout << "Errore: " << err << endl;
+}	
 
 int gcm_encrypt(unsigned char *plain, int plain_len,
                 unsigned char *aad, int aad_len,
@@ -24,34 +23,46 @@ int gcm_encrypt(unsigned char *plain, int plain_len,
     int cipher_len, len;
 
     // CREAZIONE CONTESTO
-    if(!(ctx = EVP_CIPHER_CTX_new()))
+    if(!(ctx = EVP_CIPHER_CTX_new())){
         error_handler("creazione contesto fallita");
+	return -1;
+    }
 
     // INIZIALIZZAZIONE CONTESTO
-    if(1 != EVP_EncryptInit(ctx, EVP_aes_256_gcm(), key, iv))
+    if(1 != EVP_EncryptInit(ctx, EVP_aes_256_gcm(), key, iv)){
         error_handler("inizializzazione contesto fallita");
+	return -1;
+    }
 
     // UPDATE CONTESTO -- AAD data -> quello che voglio autenticare
     if(aad && aad_len > 0){
-        if(1 != EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len))
+        if(1 != EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len)){
             error_handler("update contesto (AAD) fallito");
+	    return -1;
+    	}
     }
 
     // UPDATE CONTESTO -- Generazione ciphertext
-    if(1 != EVP_EncryptUpdate(ctx, cipher, &len, plain, plain_len))
+    if(1 != EVP_EncryptUpdate(ctx, cipher, &len, plain, plain_len)){
         error_handler("creazione contesto (ciphertext) fallito");
+	return -1;
+    }
 
     cipher_len = len;
 
     // FINALIZE
-    if(1 != EVP_EncryptFinal(ctx, cipher + len, &len))
+    if(1 != EVP_EncryptFinal(ctx, cipher + len, &len)){
         error_handler("final contesto fallita");
+	return -1;
+    }
 
     cipher_len += len;
 
     //TAG check & RET
-    if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, 16, tag))
+    if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, 16, tag)){
         error_handler("autenticazione dati fallita");
+	return -1;
+    }
 
     EVP_CIPHER_CTX_free(ctx);
     return cipher_len;
@@ -68,28 +79,38 @@ int gcm_decrypt(unsigned char *cipher, int cipher_len,
     int plain_len, len, ret;
 
     // CREAZIONE CONTESTO
-    if(!(ctx = EVP_CIPHER_CTX_new()))
+    if(!(ctx = EVP_CIPHER_CTX_new())){
         error_handler("creazione contesto fallita");
+	return -1;
+    }
 
     // INIZIALIZZAZIONE CONTESTO
-    if(1 != EVP_DecryptInit(ctx, EVP_aes_256_gcm(), key, iv))
+    if(1 != EVP_DecryptInit(ctx, EVP_aes_256_gcm(), key, iv)){
         error_handler("inizializzazione contesto fallita");
+	return -1;
+    }
 
     // UPDATE CONTESTO -- AAD data -> quello che voglio autenticare
     if(aad && aad_len > 0){
-        if(1 != EVP_DecryptUpdate(ctx, NULL, &len, aad, aad_len))
+        if(1 != EVP_DecryptUpdate(ctx, NULL, &len, aad, aad_len)){
             error_handler("update contesto (AAD) fallito");
+	    return -1;
+    	}
     }
 
     // UPDATE CONTESTO -- Generazione ciphertext
-    if(1 != EVP_DecryptUpdate(ctx, plain, &len, cipher, cipher_len))
+    if(1 != EVP_DecryptUpdate(ctx, plain, &len, cipher, cipher_len)){
         error_handler("creazione contesto (ciphertext) fallito");
+	return -1;
+    }
 
     plain_len = len;
 
     //TAG check
-    if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, 16, tag))
+    if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, 16, tag)){
         error_handler("autenticazione dati fallita");
+	return -1;
+    }
 
     // FINALIZE
     ret = EVP_DecryptFinal(ctx, plain + len, &len);
