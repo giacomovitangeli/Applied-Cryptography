@@ -5,6 +5,10 @@
 
 using namespace std;
 
+int cl_index_free_buf = 0;
+unsigned char *cl_free_buf[1024] = {0};
+int sv_index_free_buf = 0;
+unsigned char *sv_free_buf[1024] = {0};
 
 //	START CRYPTO UTILITY FUNCTIONS
 
@@ -142,6 +146,18 @@ void print_man(){
     cout<<endl;
 }
 
+void split_path(unsigned char *cmd, unsigned char **p1, unsigned char **p2){
+	char *ptr = NULL, *save = NULL;
+	const char *delim = "-";
+
+	ptr = strtok_r((char*)cmd, delim, &save);
+
+	if((ptr = strtok_r(NULL, delim, &save)))
+		strncpy((char*)*p1, ptr, strlen(ptr));
+	if((ptr = strtok_r(NULL, delim, &save)))
+		strncpy((char*)*p2, ptr, strlen(ptr));
+}
+
 int check_cmd(char *plaintext, char *path1, char *path2){	//	Implement whitelist
  
     	char *ptr = strtok(plaintext, "-");
@@ -171,7 +187,7 @@ int check_cmd(char *plaintext, char *path1, char *path2){	//	Implement whitelist
 				return -2;
 			}
 		}
-		path1 = realpath(ptr, NULL);
+		path1 = realpath(ptr, NULL);	
 		if(!path1)
 			return -2;
 		if(strncmp(path1, "/home/", strlen("/home/")) != 0){
@@ -254,14 +270,57 @@ int get_num_file(const char *dir_name){
 	return count;
 }
 
-void free_var(int n, unsigned char *buf[20]){	// Buffer allocated with malloc() pointers, multiple free()
-	for(int i = 0; i < n; i++){
-		free((void*)buf[n]);
+void free_var(int side){	// Buffer allocated with malloc() pointers, multiple free()
+	int counter = 0;
+	if(side == 1){
+		counter = cl_index_free_buf;
+		for(int i = 0; i < counter - 1; i++){
+			free((void*)cl_free_buf[i]);
+			cl_free_buf[i] = NULL;
+		}
 	}
+	else if(side == 0){
+		counter = sv_index_free_buf;
+		for(int i = 0; i < counter - 1; i++){
+			free((void*)sv_free_buf[i]);
+			sv_free_buf[i] = NULL;
+		}
+	}
+	else{
+		cerr << "Panic! Critical error, shutting down program..." << endl;
+		exit(0);
+	}	
 }
 
-//	END UTILITY FUNCTIONS
+void memory_handler(int side, int socket, int new_size, unsigned char **new_buf){
+	*new_buf = (unsigned char*)calloc(new_size+1, sizeof(unsigned char*));
+	if(!*new_buf){
+		free_var(side);
+		if(socket)
+			close(socket);
 
+		cerr << "Critical error: malloc() failed allocating " << new_size << " new bytes" << endl << "Exit program" << endl;
+		exit(0);
+	}
+
+	if(side == 1){
+		cl_free_buf[cl_index_free_buf] = *new_buf;
+		cl_index_free_buf++;
+	}
+	else if(side == 0){
+		sv_free_buf[sv_index_free_buf] = *new_buf;
+		sv_index_free_buf++;
+	}
+	else{
+		cerr << "Panic! Critical error, shutting down program..." << endl;
+		if(socket)
+			close(socket);
+		free_var(0);
+		free_var(1);
+		exit(0);
+	}	
+}
+//	END UTILITY FUNCTIONS
 
 
 

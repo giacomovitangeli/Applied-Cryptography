@@ -4,15 +4,14 @@
 
 using namespace std;
 
-/* TEST ONLY */
+// TEST ONLY 
 unsigned char key[] = "password12345678password12345678";
-/*	END*/
+//	END
 
 
 int main(){
 
     int listner_socket, new_socket, ret, option = 1, k, fdmax;
-    //uint16_t lmsg;
     struct sockaddr_in my_addr, client_addr;
 
     fd_set master;
@@ -57,6 +56,8 @@ int main(){
     fdmax = listner_socket;
     len = sizeof(client_addr);
 
+	for(int i = 0; i < 1024; i++)
+		sv_free_buf[i] = 0;
     //	Endless loop - Managing client(s) request(s) - Single process with multiple descriptors 
 
     while(1){
@@ -74,186 +75,124 @@ int main(){
                         fdmax = new_socket;
                 }
                 else{ // Serving client request
-			int ct_len, aad_len, msg_len, cmd, index_free_buf = 0;
-			unsigned char *rcv_msg, *plaintext, *ciphertext, *ct_len_byte, *aad_len_byte, *aad, *tag, *iv, *free_buf[20];			
+			int ct_len, aad_len, msg_len, cmd;
+			unsigned char *rcv_msg, *plaintext, *ciphertext, *ct_len_byte, *aad_len_byte, *aad, *tag, *iv;			
 			const char *dirname = "franca";
 
 			cout << "Perforing operation..." << endl;
 			//	READ PAYLOAD_LEN
-			rcv_msg = (unsigned char*)malloc(sizeof(int));
-			if(!rcv_msg){
-				error_handler("malloc() [rcv_msg] failed, closing socket");
-				close(k);
-				exit(0);
-			}
-			free_buf[index_free_buf] = rcv_msg;
-			index_free_buf++;
+			memory_handler(0, k, sizeof(int), &rcv_msg);
 			if((ret = read_byte(k, (void*)rcv_msg, sizeof(int))) < 0){
 				error_handler("recv() [rcv_msg] failed, closing socket");
 				close(k);
-				free_var(index_free_buf, free_buf);
+				free_var(0);
 				exit(0);
 			}
 			if(ret == 0){
 				error_handler("nothing to read! Client disconnected...");
 				close(k);
-				free_var(index_free_buf, free_buf);
-				exit(0);
+				free_var(0);
+				//exit(0);
+				break;
 			}
 			memcpy(&msg_len, rcv_msg, sizeof(int));
 
 			//	READ AAD_LEN & AAD
-			aad_len_byte = (unsigned char*)malloc(sizeof(int));
-			if(!aad_len_byte){
-				error_handler("malloc() [aad_len_byte] failed, closing socket");	// release memory of previous malloc()
-				close(k);
-				free_var(index_free_buf, free_buf);
-				exit(0);
-			}
-			free_buf[index_free_buf] = aad_len_byte;
-			index_free_buf++;
+			memory_handler(0, k, sizeof(int), &aad_len_byte);
 			if((ret = read_byte(k, (void*)aad_len_byte, sizeof(int))) < 0){
 				error_handler("recv() [aad_len_byte] failed, closing socket");
 				close(k);
-				free_var(index_free_buf, free_buf);
+				free_var(0);
 				exit(0);
 			}
 			if(ret == 0){
 				error_handler("nothing to read! Client disconnected...");
 				close(k);
-				free_var(index_free_buf, free_buf);
+				free_var(0);
 				exit(0);
 			}
 			memcpy(&aad_len, aad_len_byte, sizeof(int));
-			aad = (unsigned char*)malloc(aad_len);
-			if(!aad){
-				error_handler("malloc() [aad] failed, closing socket");
-				close(k);
-				free_var(index_free_buf, free_buf);
-				exit(0);
-			}
-			free_buf[index_free_buf] = aad;
-			index_free_buf++;
+			memory_handler(0, k, aad_len, &aad);
 			if((ret = read_byte(k, (void*)aad, aad_len)) < 0){
 				error_handler("recv() [aad] failed");
 				close(k);
-				free_var(index_free_buf, free_buf);
+				free_var(0);
 				exit(0);
 			}
 			if(ret == 0){
 				error_handler("nothing to read! Client disconnected...");
 				close(k);
-				free_var(index_free_buf, free_buf);
+				free_var(0);
 				exit(0);
 			}
 			cmd = int(aad[0]) - OFFSET;			
 
 			//	READ CT_LEN & CIPHERTEXT
-			ct_len_byte = (unsigned char*)malloc(sizeof(int));
-			if(!ct_len_byte){
-				error_handler("malloc() [ct_len_byte] failed");
-				close(k);
-				free_var(index_free_buf, free_buf);
-				exit(0);
-			}
-			free_buf[index_free_buf] = ct_len_byte;
-			index_free_buf++;
+			memory_handler(0, k, sizeof(int), &ct_len_byte);
 			if((ret = read_byte(k, (void*)ct_len_byte, sizeof(int))) < 0){
 				error_handler("recv() [ct_len_byte] failed");
 				close(k);
-				free_var(index_free_buf, free_buf);
+				free_var(0);
 				exit(0);
 			}
 			if(ret == 0){
 				error_handler("nothing to read! 4");
 				close(k);
-				free_var(index_free_buf, free_buf);
+				free_var(0);
 				exit(0);
 			}
 			memcpy(&ct_len, ct_len_byte, sizeof(int));
 
-			ciphertext = (unsigned char*)malloc(ct_len);
-			if(!ciphertext){
-				error_handler("malloc() [cyphertext] failed");
-				close(k);
-				free_var(index_free_buf, free_buf);
-				exit(0);
-			}
-			free_buf[index_free_buf] = ciphertext;
-			index_free_buf++;
+			memory_handler(0, k, ct_len, &ciphertext);
 			if((ret = read_byte(k, (void*)ciphertext, ct_len)) < 0){
 				error_handler("recv() [ciphertext] failed");
 				close(k);
-				free_var(index_free_buf, free_buf);
+				free_var(0);
 				exit(0);
 			}
 			if(ret == 0){
 				error_handler("nothing to read! 5");
 				close(k);
-				free_var(index_free_buf, free_buf);
+				free_var(0);
 				exit(0);
 			}
 
 			//	READ TAG
-			tag = (unsigned char*)malloc(TAG_LEN);
-			if(!tag){
-				error_handler("malloc() [tag] failed");
-				close(k);
-				free_var(index_free_buf, free_buf);
-				exit(0);
-			}
-			free_buf[index_free_buf] = tag;
-			index_free_buf++;
+			memory_handler(0, k, TAG_LEN, &tag);
 			if((ret = read_byte(k, (void*)tag, TAG_LEN)) < 0){
 				error_handler("recv() [tag] failed");
 				close(k);
-				free_var(index_free_buf, free_buf);
+				free_var(0);
 				exit(0);
 			}
 			if(ret == 0){
 				error_handler("nothing to read! 6");
 				close(k);
-				free_var(index_free_buf, free_buf);
+				free_var(0);
 				exit(0);
 			}
 
 			//	READ IV
-			iv = (unsigned char*)malloc(IV_LEN);
-			if(!iv){
-				error_handler("malloc() [iv] failed");
-				close(k);
-				free_var(index_free_buf, free_buf);
-				exit(0);
-			}
-			free_buf[index_free_buf] = iv;
-			index_free_buf++;
+			memory_handler(0, k, IV_LEN, &iv);
 			if((ret = read_byte(k, (void*)iv, IV_LEN)) < 0){
 				error_handler("recv() [iv] failed");
 				close(k);
-				free_var(index_free_buf, free_buf);
+				free_var(0);
 				exit(0);
 			}
 			if(ret == 0){
 				error_handler("nothing to read! 7");
 				close(k);
-				free_var(index_free_buf, free_buf);
+				free_var(0);
 				exit(0);
 			}
 
 			//	DECRYPT CT
-			plaintext = (unsigned char*)malloc(ct_len + 1);
-			if(!plaintext){
-				error_handler("malloc() [plaintext] failed");
-				close(k);
-				free_var(index_free_buf, free_buf);
-				exit(0);
-			}
-			free_buf[index_free_buf] = plaintext;
-			index_free_buf++;
+			memory_handler(0, k, ct_len, &plaintext);//ct len + 1
 			ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, key, iv, IV_LEN, plaintext);
 			if(ret < 0){
 				close(k);
-				free_var(index_free_buf, free_buf);
+				free_var(0);
 				exit(0);
 			}
 			// todo: check nonce and path traversing
@@ -287,7 +226,7 @@ int main(){
 					else{
 						error_handler("directory not found");
 						close(k);
-						free_var(index_free_buf, free_buf);
+						free_var(0);
 						exit(0);
 					}
 					
@@ -299,7 +238,7 @@ int main(){
 								continue;
 							
 							//	copy file names into buf
-							name_tmp = (unsigned char*)malloc(strlen(en->d_name) + 2);
+							name_tmp = (unsigned char*)calloc((strlen(en->d_name) + 2), sizeof(unsigned char));
          						name_tmp = (unsigned char*)strncpy((char*)name_tmp, en->d_name, strlen(en->d_name));
 							if(num_file > 1)
 								name_tmp = (unsigned char*)strncat((char*)name_tmp, "|", sizeof(char));
@@ -318,7 +257,7 @@ int main(){
 						error_handler("directory not found");
 						
 						close(k);
-						free_var(index_free_buf, free_buf);
+						free_var(0);
 
 						free(name_tmp);
 						free(buf);
@@ -326,100 +265,38 @@ int main(){
 					}
 					
 					//	MALLOC & RAND VARIABLES
-					nonce_op = (unsigned char*)malloc(NONCE_LEN);
-					if(!nonce_op){
-						error_handler("malloc() [nonce] failed");
-						close(k);
-						free_var(index_free_buf, free_buf);
-						exit(0);
-					}
-					free_buf[index_free_buf] = nonce_op;
-					index_free_buf++;
+					memory_handler(0, k, NONCE_LEN, &nonce_op);
+					memory_handler(0, k, TAG_LEN, &tag_op);
+					memory_handler(0, k, strlen((char*)buf), &plaintext_op);
+					memory_handler(0, k, strlen((char*)buf), &ciphertext_op);
+					memory_handler(0, k, 1, &opcode_op);
+					memory_handler(0, k, IV_LEN, &iv_op);
+
 					rc_op = RAND_bytes(nonce_op, NONCE_LEN);
 					if(rc_op != 1){
 						error_handler("nonce generation failed");
 						close(k);
-						free_var(index_free_buf, free_buf);
+						free_var(0);
 						exit(0);
 					}
 
-					iv_op = (unsigned char*)malloc(IV_LEN);
-					if(!iv_op){
-						error_handler("malloc() [iv] failed");
-						close(k);
-						free_var(index_free_buf, free_buf);
-						exit(0);
-					}
-					free_buf[index_free_buf] = iv_op;
-					index_free_buf++;
 					rc_op = RAND_bytes(iv, IV_LEN);
 					if(rc_op != 1){
 						error_handler("iv generation failed");
 						close(k);
-						free_var(index_free_buf, free_buf);
+						free_var(0);
 						exit(0);
 					}
 
-					tag_op = (unsigned char*)malloc(TAG_LEN);
-					if(!tag_op){
-						error_handler("malloc() [tag] failed");
-						close(k);
-						free_var(index_free_buf, free_buf);
-						exit(0);
-					}
-					free_buf[index_free_buf] = tag_op;
-					index_free_buf++;
-					opcode_op = (unsigned char*)malloc(1);
-					if(!opcode_op){
-						error_handler("malloc() [opcode] failed");
-						close(k);
-						free_var(index_free_buf, free_buf);
-						exit(0);
-					}
-					free_buf[index_free_buf] = opcode_op;
-					index_free_buf++;
 					opcode_op[0] = '2';
 
-					plaintext_op = (unsigned char*)malloc(strlen((char*)buf)); 
-					if(!plaintext_op){
-						error_handler("malloc() [plaintext_op] failed");
-						close(k);
-						free_var(index_free_buf, free_buf);
-						exit(0);
-					}
-					free_buf[index_free_buf] = plaintext_op;
-					index_free_buf++;
-					ciphertext_op = (unsigned char*)malloc(strlen((char*)buf));
-					if(!ciphertext_op){
-						error_handler("malloc() [ciphertext_op] failed");
-						close(k);
-						free_var(index_free_buf, free_buf);
-						exit(0);
-					}
-					free_buf[index_free_buf] = ciphertext_op;
-					index_free_buf++;
 					//	SERIALIZATION
 
 					//	AAD SERIALIZATION
 					aad_len_op = 1 + NONCE_LEN;	//opcode + lunghezza nonce -- opcode = unsigned char
-					aad_op = (unsigned char*)malloc(aad_len_op);
-					if(!aad_op){
-						error_handler("malloc() [aad_op] failed");
-						close(k);
-						free_var(index_free_buf, free_buf);
-						exit(0);
-					}
-					free_buf[index_free_buf] = aad_op;
-					index_free_buf++;
-					aad_len_byte_op = (unsigned char*)malloc(aad_len_op);	
-					if(!aad_len_byte_op){
-						error_handler("malloc() [aad_len_byte_op] failed");
-						close(k);
-						free_var(index_free_buf, free_buf);
-						exit(0);
-					}
-					free_buf[index_free_buf] = aad_len_byte_op;
-					index_free_buf++;
+					memory_handler(0, k, aad_len_op, &aad_op);
+					memory_handler(0, k, aad_len_op, &aad_len_byte_op);
+					
 					serialize_int(aad_len_op, aad_len_byte_op);
 					memcpy(aad_op, opcode_op, sizeof(unsigned char));
 					memcpy(&aad_op[1], nonce_op, NONCE_LEN);
@@ -430,43 +307,21 @@ int main(){
 					if(ct_len_op <= 0){ 
 						error_handler("encrypt() failed");
 						close(k);
-						free_var(index_free_buf, free_buf);
+						free_var(0);
 						exit(0);
 					}
-					ct_len_byte_op = (unsigned char*)malloc(ct_len_op);
-					if(!ct_len_byte_op){
-						error_handler("malloc() [ct_len_byte_op] failed");
-						close(k);
-						free_var(index_free_buf, free_buf);
-						exit(0);
-					}
-					free_buf[index_free_buf] = ct_len_byte_op;
-					index_free_buf++;
+					memory_handler(0, k, ct_len_op, &ct_len_byte_op);
 					serialize_int(ct_len_op, ct_len_byte_op);
 
 					//	PAYLOAD LEN SERIALIZATION
 					payload_len_op = sizeof(int) + aad_len_op + sizeof(int) + ct_len_op + TAG_LEN + IV_LEN;
-					payload_len_byte_op = (unsigned char*)malloc(sizeof(int));
-					if(!payload_len_byte_op){
-						error_handler("malloc() [payload_len_byte_op] failed");
-						close(k);
-						free_var(index_free_buf, free_buf);
-						exit(0);
-					}
-					free_buf[index_free_buf] = payload_len_byte_op;
-					index_free_buf++;
+					memory_handler(0, k, sizeof(int), &payload_len_byte_op);
+					
 					serialize_int(payload_len_op, payload_len_byte_op);
 
 					//	BUILD MESSAGE (resp_msg)
 					msg_len_op = sizeof(int) + sizeof(int) + aad_len_op + sizeof(int) + ct_len_op + TAG_LEN + IV_LEN;
-					resp_msg_op = (unsigned char*)malloc(msg_len_op);
-					if(!resp_msg_op){
-						error_handler("malloc() [resp_msg_op] failed");
-						close(k);
-						free_var(index_free_buf, free_buf);
-						exit(0);
-					}
-					free_buf[index_free_buf] = resp_msg_op;
+					memory_handler(0, k, msg_len_op, &resp_msg_op);
 
 					memcpy(resp_msg_op, payload_len_byte_op, sizeof(int));
 					memcpy((unsigned char*)&resp_msg_op[sizeof(int)], aad_len_byte_op, sizeof(int));
@@ -480,13 +335,13 @@ int main(){
 					if((ret = send(k, (void*)resp_msg_op, msg_len_op, 0)) < 0){
 			    			error_handler("send() failed");
 						close(k);
-						free_var(index_free_buf, free_buf);
+						free_var(0);
 						exit(0);
 					}
 
 					//	FREE MEMORY ALLOCATED (INSIDE SWITCH)
 					
-					free(nonce_op);
+					/*free(nonce_op);
 					free(opcode_op);
 					free(plaintext_op);
 					free(iv_op);
@@ -497,12 +352,94 @@ int main(){
 					free(ct_len_byte_op);
 					free(payload_len_byte_op);
 					free(resp_msg_op);
-					free(buf);
-					index_free_buf = 0;
+					free(buf);*/
+					free_var(0);
 					break;
 				}
-				case 3:{	// up 1:	[payload_len][aad_len]{[opcode][nonce]}[cyph_len][file_name][tag][iv]
-				
+				case 3:{	// up 2:	[payload_len][aad_len]{[opcode][nonce][flag]}[cyph_len][file_name][tag][iv]
+					int file_size;					
+					unsigned char flag = '1';
+
+					memcpy(&file_size, &aad[17], sizeof(int));
+					cout << "Size (bytes): " << file_size << endl;
+					cout << "File Name: " << plaintext << endl;
+					if(file_size > 4294967296)
+						flag = '0';
+					
+					//	MALLOC & RAND VARIABLES
+					memory_handler(0, k, NONCE_LEN, &nonce_op);
+					memory_handler(0, k, TAG_LEN, &tag_op);
+					memory_handler(0, k, 1, &opcode_op);
+					memory_handler(0, k, IV_LEN, &iv_op);
+					memory_handler(0, k, 1, &plaintext_op);
+					memory_handler(0, k, 1, &ciphertext_op);
+
+					rc_op = RAND_bytes(nonce_op, NONCE_LEN);
+					if(rc_op != 1){
+						error_handler("nonce generation failed");
+						close(k);
+						free_var(0);
+						exit(0);
+					}
+					rc_op = RAND_bytes(iv, IV_LEN);
+					if(rc_op != 1){
+						error_handler("iv generation failed");
+						close(k);
+						free_var(0);
+						exit(0);
+					}
+					opcode_op[0] = '3';
+					plaintext_op[0] = DUMMY_BYTE;
+
+					//	SERIALIZATION
+
+					//	AAD SERIALIZATION
+					aad_len_op = 2 + NONCE_LEN;	//opcode + lunghezza nonce -- opcode = unsigned char
+					memory_handler(0, k, aad_len_op, &aad_op);
+					memory_handler(0, k, aad_len_op, &aad_len_byte_op);
+
+					serialize_int(aad_len_op, aad_len_byte_op);
+					memcpy(aad_op, opcode_op, sizeof(unsigned char));
+					memcpy(&aad_op[1], nonce_op, NONCE_LEN);
+					memcpy(&aad_op[17], &flag, sizeof(unsigned char));
+
+					//	CIPHERTEXT LEN SERIALIZATION
+					ct_len_op = gcm_encrypt(plaintext_op, 1, aad_op, aad_len_op, key, iv_op, IV_LEN, ciphertext_op, tag_op);
+					if(ct_len_op <= 0){ 
+						error_handler("encrypt() failed");
+						close(k);
+						free_var(0);
+						exit(0);
+					}
+					memory_handler(0, k, ct_len_op, &ct_len_byte_op);
+					serialize_int(ct_len_op, ct_len_byte_op);
+
+					//	PAYLOAD LEN SERIALIZATION
+					payload_len_op = sizeof(int) + aad_len_op + sizeof(int) + ct_len_op + TAG_LEN + IV_LEN;
+					memory_handler(0, k, sizeof(int), &payload_len_byte_op);
+					serialize_int(payload_len_op, payload_len_byte_op);
+
+					//	BUILD MESSAGE (resp_msg)
+					msg_len_op = sizeof(int) + sizeof(int) + aad_len_op + sizeof(int) + ct_len_op + TAG_LEN + IV_LEN;
+					memory_handler(0, k, msg_len_op, &resp_msg_op);
+
+					memcpy(resp_msg_op, payload_len_byte_op, sizeof(int));
+					memcpy((unsigned char*)&resp_msg_op[sizeof(int)], aad_len_byte_op, sizeof(int));
+					memcpy((unsigned char*)&resp_msg_op[sizeof(int) + sizeof(int)], aad_op, aad_len_op);
+					memcpy((unsigned char*)&resp_msg_op[sizeof(int) + sizeof(int) + aad_len_op], ct_len_byte_op, sizeof(int));
+					memcpy((unsigned char*)&resp_msg_op[sizeof(int) + sizeof(int) + aad_len_op + sizeof(int)], ciphertext_op, ct_len_op);
+					memcpy((unsigned char*)&resp_msg_op[sizeof(int) + sizeof(int) + aad_len_op + sizeof(int) + ct_len_op], tag_op, TAG_LEN);
+					memcpy((unsigned char*)&resp_msg_op[sizeof(int) + sizeof(int) + aad_len_op + sizeof(int) + ct_len_op + TAG_LEN], iv_op, IV_LEN);
+
+					//	SEND PACKET
+					if((ret = send(k, (void*)resp_msg_op, msg_len_op, 0)) < 0){
+			    			error_handler("send() failed");
+						close(k);
+						free_var(0);
+						exit(0);
+					}
+					cout << "ricevuta richiesta upload, risposta accordata" << endl;
+					free_var(0);
 					break;
 				}
 				case 4:{	// dl
@@ -527,14 +464,14 @@ int main(){
 				}
 			}
 			//	FREE MEMORY ALLOCATED (OUTSIDE SWITCH)
-			free(iv);
+			/*free(iv);
 			free(tag);
 			free(plaintext);
 			free(ciphertext);
 			free(aad);
 			free(aad_len_byte);
 			free(ct_len_byte);
-			free(rcv_msg);
+			free(rcv_msg);*/
                 }
             }
         }
