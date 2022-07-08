@@ -285,7 +285,7 @@ int main(){
 			}
 			case UPLOAD:{	// up command 1 - request - [pay_len][aad_len]{[nonce][opcode][file_size_req]}[ciph_len]([ciphertext - file_name])[TAG][IV]
 				int payload_len, ct_len, aad_len, rc, msg_len, file_size;
-	    			unsigned char *rcv_msg, *resp_msg, *tag, *iv, *plaintext, *ciphertext, *opcode, *nonce, *aad, *aad_len_byte, *payload_len_byte, *ct_len_byte, *file_size_byte;
+                unsigned char *rcv_msg, *resp_msg, *tag, *iv, *plaintext, *ciphertext, *opcode, *nonce, *aad, *aad_len_byte, *payload_len_byte, *ct_len_byte, *file_size_byte;
 				unsigned char flag;
 				struct stat *s_buf;	
 
@@ -719,9 +719,125 @@ int main(){
 				free_var(1);
 				break;
 			}
-		    case DELETE:{	// rm command
+		    case DELETE:{	// rm command request:  [pay_len][aad_len]{[nonce][opcode]}[ciph_len]([ciphertext - file_name])[TAG][IV]
+                int payload_len, ct_len, aad_len, rc, msg_len;
+                unsigned char *rcv_msg, *resp_msg, *tag, *iv, *plaintext, *ciphertext, *opcode, *nonce, *aad, *aad_len_byte, *payload_len_byte, *ct_len_byte;
+                //unsigned char flag;
+                struct stat *s_buf;
 
-				free_var(1);
+                //	MALLOC & RAND VARIABLES
+                memory_handler(1, socket_d, 64, &plaintext);
+                memory_handler(1, socket_d, NONCE_LEN, &nonce);
+                memory_handler(1, socket_d, IV_LEN, &iv);
+                memory_handler(1, socket_d, TAG_LEN, &tag);
+                memory_handler(1, socket_d, 1, &opcode);
+                memory_handler(1, socket_d, 512, &ciphertext);
+
+                rc = RAND_bytes(nonce, NONCE_LEN);
+                if(rc != 1){
+                    error_handler("nonce generation failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+                rc = RAND_bytes(iv, IV_LEN);
+                if(rc != 1){
+                    error_handler("iv generation failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+
+                opcode[0] = '6';
+                memset(ciphertext, 0, 512);
+
+                /*
+                //	FILE STAT
+                s_buf = (struct stat*)malloc(sizeof(struct stat));
+                if(!s_buf){
+                    error_handler("malloc() [buffer stat] failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+                cl_free_buf[cl_index_free_buf] = (unsigned char*)s_buf;
+                cl_index_free_buf++;
+
+                if((stat((char*)path1, s_buf)) < 0){
+                    error_handler("stat failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }*/
+
+
+                //	DELETE RM-1
+
+                //	AAD SERIALIZATION
+                aad_len = 1 + NONCE_LEN;	//opcode + lunghezza nonce -- opcode = unsigned char
+                memory_handler(1, socket_d, aad_len, &aad);
+                memory_handler(1, socket_d, aad_len, &aad_len_byte);
+
+                serialize_int(aad_len, aad_len_byte);
+                memcpy(aad, opcode, sizeof(unsigned char));
+                memcpy(&aad[1], nonce, NONCE_LEN);
+
+                //	CIPHERTEXT LEN SERIALIZATION
+                ct_len = gcm_encrypt(plaintext, strlen((char*)plaintext), aad, aad_len, key, iv, IV_LEN, ciphertext, tag);
+                if(ct_len <= 0){
+                    error_handler("encrypt() failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+                memory_handler(1, socket_d, ct_len, &ct_len_byte);
+                serialize_int(ct_len, ct_len_byte);
+
+                //	PAYLOAD LEN SERIALIZATION
+                payload_len = sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;
+                memory_handler(1, socket_d, sizeof(int), &payload_len_byte);
+                serialize_int(payload_len, payload_len_byte);
+
+                //	BUILD MESSAGE (resp_msg)
+                msg_len = sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;
+                memory_handler(1, socket_d, msg_len, &resp_msg);
+
+                memcpy(resp_msg, payload_len_byte, sizeof(int));
+                memcpy((unsigned char*)&resp_msg[sizeof(int)], aad_len_byte, sizeof(int));
+                memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int)], aad, aad_len);
+                memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len], ct_len_byte, sizeof(int));
+                memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int)], ciphertext, ct_len);
+                memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len], tag, TAG_LEN);
+                memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN], iv, IV_LEN);
+
+                //	SEND PACKET
+                if((ret = send(socket_d, (void*)resp_msg, msg_len, 0)) < 0){
+                    error_handler("send() failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+
+                //	REQUEST ACK
+                //	CLEAN UP VARIABLES
+                memset(iv, 0, IV_LEN);
+                memset(tag, 0, TAG_LEN);
+                memset(plaintext, 0, 512);
+                memset(ciphertext, 0, 512);
+                memset(aad, 0, aad_len);
+                memset(ct_len_byte, 0, sizeof(int));
+                memset(aad_len_byte, 0, sizeof(int));
+                memset(payload_len_byte, 0, sizeof(int));
+                ct_len = 0;
+                aad_len = 0;
+                payload_len = 0;
+                msg_len = 0;
+                // 	END
+
+                //	TODO RECEIVE SERVER REPLAY to confirm the file deleted
+
+
+                free_var(1);
 				break;
 			}
 		    default:	// technically not possible

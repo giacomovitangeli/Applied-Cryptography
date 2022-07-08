@@ -450,12 +450,12 @@ int main(){
 				
 					break;
 				}
-				case 6:{	// rn
-
+				case 6:{	// rm command replay:  [payload_len][aad_len]{[opcode][nonce][flag]}[cyph_len][file_name][tag][iv]
+                    cout << "ricevuta richiesta delete" << endl;
 					break;
 				}
 				case 7:{	// logout
-			
+
 					break;
 				}
 				default:{

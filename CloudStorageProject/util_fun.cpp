@@ -14,6 +14,7 @@ unsigned char *sv_free_buf[1024] = {0};
 
 void error_handler(const string err){
 	cout << "Errore: " << err << endl;
+    exit(0);
 }	
 
 int gcm_encrypt(unsigned char *plain, int plain_len,
@@ -245,7 +246,6 @@ int read_byte(int sock, void *buf, ssize_t len){
 		ptr += read;
 		ret += read;
 	}
-
 	return ret;
 }
 
