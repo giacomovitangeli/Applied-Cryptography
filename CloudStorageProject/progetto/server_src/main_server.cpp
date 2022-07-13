@@ -73,7 +73,8 @@ int main(){
 				else{ // Serving client request
 					int ct_len, aad_len, msg_len, cmd;
 					unsigned char *rcv_msg, *plaintext, *ciphertext, *ct_len_byte, *aad_len_byte, *aad, *tag, *iv, *user_dir;			
-					const char *dirname = "/home/giacomo/Desktop/progetto/server_src/franca";
+					//const char *dirname = "/home/giacomo/Desktop/progetto/server_src/franca";
+                    const char *dirname = "/home/giacomo/GitHub/Applied-Cryptography/CloudStorageProject/progetto/server_src/franca";
 
 					cout << "Perforing operation..." << endl;
 					//	READ PAYLOAD_LEN
@@ -720,8 +721,9 @@ int main(){
 						       if(dir){
 							   int rename_result = 1;
 							   //string basepath = "/Users/asterix/Documents/University/UniPi/AppliedCryptography/Project/AC-Project/CloudStorageProject/franca/";
-							   string basepath = "/home/giacomo/Desktop/progetto/server_src/franca/";
-							   char *fullpath_old, *fullpath_new;
+							   //string basepath = "/home/giacomo/Desktop/progetto/server_src/franca/";
+                               string basepath = "/home/giacomo/GitHub/Applied-Cryptography/CloudStorageProject/progetto/server_src/franca/";
+                               char *fullpath_old, *fullpath_new;
 							   fullpath_old = (char *)malloc(basepath.size() + strlen(old_file_name) + 1);
 							   strncpy(fullpath_old, basepath.c_str(), basepath.size() + 1);
 
@@ -841,7 +843,132 @@ int main(){
 						       }	
 							break;
 						}
-						case 6:{	// rn
+						case 6:{	// rm command replay:  [payload_len][aad_len]{[opcode][nonce][flag]}[cyph_len][file_name][tag][iv]
+                            cout << "ricevuta richiesta delete" << endl;
+                            cout << plaintext << endl;
+                            struct dirent *en;
+                            unsigned char *buf;
+                            DIR *dir;
+                            dir = opendir(dirname);
+                            if(dir){
+                                string basepath = "/home/giacomo/GitHub/Applied-Cryptography/CloudStorageProject/progetto/server_src/franca/";
+                                char *fullpath, *ptxt;
+
+                                ptxt = (char *)malloc(strlen((char*)plaintext) + 1);
+                                strncpy(ptxt , (char*)plaintext, strlen((char*)plaintext));
+
+                                fullpath = (char *)malloc(basepath.size() + strlen(ptxt) + 1);
+                                strncpy(fullpath, basepath.c_str(), basepath.size() + 1);
+                                strncat(fullpath, ptxt, strlen(ptxt) + 1);
+
+                                while((en = readdir(dir)) != NULL){
+                                    if(!strcmp(en->d_name, ".") || !strcmp(en->d_name, ".."))
+                                        continue;
+
+                                    if(!strncmp(ptxt, en->d_name, strlen(en->d_name))){ //cerco il file, una volta trovato lo elimino
+
+                                        if(remove(fullpath) == -1)
+                                        {
+                                            cout << "Error: " << strerror(errno) <<endl;
+                                            error_handler("File not found");
+                                            close(k);
+                                            free_var(0);
+                                            exit(0);
+                                        }else{
+                                            cout<< ptxt <<" succesfully removed"<<endl;
+                                        }
+                                        break;
+                                    }
+                                }
+                                buf = (unsigned char*)malloc(strlen(ptxt)*4);
+                                buf = (unsigned char*)strncpy((char*)buf, "Done", 4);
+
+                                memory_handler(0, k, NONCE_LEN, &nonce_op);
+                                memory_handler(0, k, TAG_LEN, &tag_op);
+                                memory_handler(0, k, strlen((char*)buf), &plaintext_op);
+                                memory_handler(0, k, strlen((char*)buf), &ciphertext_op);
+                                memory_handler(0, k, 1, &opcode_op);
+                                memory_handler(0, k, IV_LEN, &iv_op);
+
+                                rc_op = RAND_bytes(nonce_op, NONCE_LEN);
+                                if(rc_op != 1){
+                                    error_handler("nonce generation failed");
+                                    close(k);
+                                    free_var(0);
+                                    exit(0);
+                                }
+
+                                rc_op = RAND_bytes(iv, IV_LEN);
+                                if(rc_op != 1){
+                                    error_handler("iv generation failed");
+                                    close(k);
+                                    free_var(0);
+                                    exit(0);
+                                }
+
+                                opcode_op[0] = '6';
+
+                                // SERIALIZATION
+
+                                // AAD SERIALIZATION
+                                aad_len_op = 1 + NONCE_LEN; //opcode + lunghezza nonce -- opcode = unsigned char
+                                memory_handler(0, k, aad_len_op, &aad_op);
+                                memory_handler(0, k, aad_len_op, &aad_len_byte_op);
+
+                                serialize_int(aad_len_op, aad_len_byte_op);
+                                memcpy(aad_op, opcode_op, sizeof(unsigned char));
+                                memcpy(&aad_op[1], nonce_op, NONCE_LEN);
+
+                                // CIPHERTEXT LEN SERIALIZATION
+                                strncpy((char*)plaintext_op, (char*)buf, strlen((char*)buf));
+                                strncpy((char*)plaintext_op, (char*)buf, strlen((char*)buf));
+                                ct_len_op = gcm_encrypt(plaintext_op, strlen((char*)buf), aad_op, aad_len_op, key, iv_op, IV_LEN, ciphertext_op, tag_op);
+                                if(ct_len_op <= 0){
+                                    error_handler("encrypt() failed");
+                                    close(k);
+                                    free_var(0);
+                                    exit(0);
+                                }
+                                memory_handler(0, k, ct_len_op, &ct_len_byte_op);
+                                serialize_int(ct_len_op, ct_len_byte_op);
+
+                                // PAYLOAD LEN SERIALIZATION
+                                payload_len_op = sizeof(int) + aad_len_op + sizeof(int) + ct_len_op + TAG_LEN + IV_LEN;
+                                memory_handler(0, k, sizeof(int), &payload_len_byte_op);
+
+                                serialize_int(payload_len_op, payload_len_byte_op);
+
+                                // BUILD MESSAGE (resp_msg)
+                                msg_len_op = sizeof(int) + sizeof(int) + aad_len_op + sizeof(int) + ct_len_op + TAG_LEN + IV_LEN;
+                                memory_handler(0, k, msg_len_op, &resp_msg_op);
+
+                                memcpy(resp_msg_op, payload_len_byte_op, sizeof(int));
+                                memcpy((unsigned char*)&resp_msg_op[sizeof(int)], aad_len_byte_op, sizeof(int));
+                                memcpy((unsigned char*)&resp_msg_op[sizeof(int) + sizeof(int)], aad_op, aad_len_op);
+                                memcpy((unsigned char*)&resp_msg_op[sizeof(int) + sizeof(int) + aad_len_op], ct_len_byte_op, sizeof(int));
+                                memcpy((unsigned char*)&resp_msg_op[sizeof(int) + sizeof(int) + aad_len_op + sizeof(int)], ciphertext_op, ct_len_op);
+                                memcpy((unsigned char*)&resp_msg_op[sizeof(int) + sizeof(int) + aad_len_op + sizeof(int) + ct_len_op], tag_op, TAG_LEN);
+                                memcpy((unsigned char*)&resp_msg_op[sizeof(int) + sizeof(int) + aad_len_op + sizeof(int) + ct_len_op + TAG_LEN], iv_op, IV_LEN);
+
+                                // SEND PACKET
+                                if((ret = send(k, (void*)resp_msg_op, msg_len_op, 0)) < 0){
+                                    error_handler("send() failed");
+                                    close(k);
+                                    free_var(0);
+                                    exit(0);
+                                }
+                                closedir(dir);
+
+
+                            }else{
+                                cout << "Error: " << strerror(errno) <<endl;
+                                error_handler("File not found");
+                                close(k);
+                                free_var(0);
+                                exit(0);
+                            }
+
+
 
 							break;
 						}

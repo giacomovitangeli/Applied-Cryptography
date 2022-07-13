@@ -11,8 +11,9 @@ int main(){
 	struct sockaddr_in sv_addr;
 	user *this_user;
 
-	const char cl_dir[] = "/home/giacomo/Desktop/progetto/client_src/";
-	//	Cleanup and initialization	 
+	//const char cl_dir[] = "/home/giacomo/Desktop/progetto/client_src/";
+	const char cl_dir[] = "/home/giacomo/GitHub/Applied-Cryptography/CloudStorageProject/progetto/client_src/";
+	//	Cleanup and initialization
 	memset(&sv_addr, 0, sizeof(sv_addr));
 	sv_addr.sin_family = AF_INET;
 	sv_addr.sin_port = htons(4242); //RANDOM port number
@@ -946,10 +947,214 @@ int main(){
 				free_var(1);
 				break;
 			}
-		    case DELETE:{	// rm command
+		    case DELETE:{   // rm command request:  [pay_len][aad_len]{[nonce][opcode]}[ciph_len]([ciphertext - file_name])[TAG][IV]
+                int payload_len, ct_len, aad_len, rc, msg_len;
+                unsigned char *rcv_msg, *resp_msg, *tag, *iv, *plaintext, *ciphertext, *opcode, *nonce, *aad, *aad_len_byte, *payload_len_byte, *ct_len_byte;
+                //unsigned char flag;
+                struct stat *s_buf;
 
-				free_var(1);
-				break;
+                //	MALLOC & RAND VARIABLES
+                memory_handler(1, socket_d, 64, &plaintext);
+                memory_handler(1, socket_d, NONCE_LEN, &nonce);
+                memory_handler(1, socket_d, IV_LEN, &iv);
+                memory_handler(1, socket_d, TAG_LEN, &tag);
+                memory_handler(1, socket_d, 1, &opcode);
+                memory_handler(1, socket_d, 512, &ciphertext);
+
+                rc = RAND_bytes(nonce, NONCE_LEN);
+                if(rc != 1){
+                    error_handler("nonce generation failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+                rc = RAND_bytes(iv, IV_LEN);
+                if(rc != 1){
+                    error_handler("iv generation failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+
+                opcode[0] = '6';
+                //memset(ciphertext, 0, 512);
+                strncpy((char*)plaintext, (char*)file1, strlen((char*)file1));
+
+                //	DELETE RM-1
+
+                //	AAD SERIALIZATION
+                aad_len = 1 + NONCE_LEN;	//opcode + lunghezza nonce -- opcode = unsigned char
+                memory_handler(1, socket_d, aad_len, &aad);
+                memory_handler(1, socket_d, aad_len, &aad_len_byte);
+
+                serialize_int(aad_len, aad_len_byte);
+                memcpy(aad, opcode, sizeof(unsigned char));
+                memcpy(&aad[1], nonce, NONCE_LEN);
+
+                //	CIPHERTEXT LEN SERIALIZATION
+                ct_len = gcm_encrypt(plaintext, strlen((char*)plaintext), aad, aad_len, key, iv, IV_LEN, ciphertext, tag);
+                if(ct_len <= 0){
+                    error_handler("encrypt() failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+                memory_handler(1, socket_d, ct_len, &ct_len_byte);
+                serialize_int(ct_len, ct_len_byte);
+
+                //	PAYLOAD LEN SERIALIZATION
+                payload_len = sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;
+                memory_handler(1, socket_d, sizeof(int), &payload_len_byte);
+                serialize_int(payload_len, payload_len_byte);
+
+                //	BUILD MESSAGE (resp_msg)
+                msg_len = sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;
+                memory_handler(1, socket_d, msg_len, &resp_msg);
+
+                memcpy(resp_msg, payload_len_byte, sizeof(int));
+                memcpy((unsigned char*)&resp_msg[sizeof(int)], aad_len_byte, sizeof(int));
+                memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int)], aad, aad_len);
+                memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len], ct_len_byte, sizeof(int));
+                memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int)], ciphertext, ct_len);
+                memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len], tag, TAG_LEN);
+                memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN], iv, IV_LEN);
+
+                //	SEND PACKET
+                if((ret = send(socket_d, (void*)resp_msg, msg_len, 0)) < 0){
+                    error_handler("send() failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+
+                //	REQUEST ACK
+                //	CLEAN UP VARIABLES
+                memset(iv, 0, IV_LEN);
+                memset(tag, 0, TAG_LEN);
+                memset(plaintext, 0, 512);
+                memset(ciphertext, 0, 512);
+                memset(aad, 0, aad_len);
+                memset(ct_len_byte, 0, sizeof(int));
+                memset(aad_len_byte, 0, sizeof(int));
+                memset(payload_len_byte, 0, sizeof(int));
+                ct_len = 0;
+                aad_len = 0;
+                payload_len = 0;
+                msg_len = 0;
+                // 	END
+
+                // RECEIVE SERVER REPLAY
+
+                // READ PAYLOAD_LEN
+                memory_handler(1, socket_d, sizeof(int), &rcv_msg);
+                if((ret = read_byte(socket_d, (void*)rcv_msg, sizeof(int))) < 0){
+                    error_handler("recv() [rcv_msg] failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+                if(ret == 0){
+                    error_handler("nothing to read! 1");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+                memcpy(&msg_len, rcv_msg, sizeof(int));
+                // READ AAD_LEN & AAD
+                if((ret = read_byte(socket_d, (void*)aad_len_byte, sizeof(int))) < 0){
+                    error_handler("recv() [aad_len_byte] failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+                if(ret == 0){
+                    error_handler("nothing to read! 2");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+                memcpy(&aad_len, aad_len_byte, sizeof(int));
+                if((ret = read_byte(socket_d, (void*)aad, aad_len)) < 0){
+                    error_handler("recv() [aad] failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+                if(ret == 0){
+                    error_handler("nothing to read! 3");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+                cmd = int(aad[0]) - OFFSET;
+
+                // READ CT_LEN & CIPHERTEXT
+                if((ret = read_byte(socket_d, (void*)ct_len_byte, sizeof(int))) < 0){
+                    error_handler("recv() [ct_len_byte] failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+                if(ret == 0){
+                    error_handler("nothing to read! 4");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+                memcpy(&ct_len, ct_len_byte, sizeof(int));
+
+                if((ret = read_byte(socket_d, (void*)ciphertext, ct_len)) < 0){
+                    error_handler("recv() [ciphertext] failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+                if(ret == 0){
+                    error_handler("nothing to read! 5");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+
+                // READ TAG
+                if((ret = read_byte(socket_d, (void*)tag, TAG_LEN)) < 0){
+                    error_handler("recv() [tag] failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+                if(ret == 0){
+                    error_handler("nothing to read! 6");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+
+                // READ IV
+                if((ret = read_byte(socket_d, (void*)iv, IV_LEN)) < 0){
+                    error_handler("recv() [iv] failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+                if(ret == 0){
+                    error_handler("nothing to read! 7");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+
+                // DECRYPT CT
+                ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, key, iv, IV_LEN, plaintext);
+                if(ret < 0){
+                    error_handler("decrypt failed");
+                    free_var(1);
+                    close(socket_d);
+                    exit(0);
+                }
+
+                free_var(1);
+                break;
 			}
 		    default:	// technically not possible
 		        	break;
