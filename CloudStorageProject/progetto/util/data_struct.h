@@ -47,6 +47,7 @@
 #define MAX_FILSE_SIZE	2^^32
 //  END SIZE LIMIT
 
+#define MAX_PATH	512
 #define TAG_LEN		16
 #define	IV_LEN		12
 #define NONCE_LEN	16

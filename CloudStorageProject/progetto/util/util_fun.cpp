@@ -151,14 +151,15 @@ void print_man(){
 
 void split_file(unsigned char *cmd, unsigned char **p1, unsigned char **p2){
 	char *ptr = NULL, *save = NULL;
-	const char *delim = "-";
+	const char *delim = "- ";
 
 	ptr = strtok_r((char*)cmd, delim, &save);
-
 	if((ptr = strtok_r(NULL, delim, &save)))
 		strncpy((char*)*p1, ptr, strlen(ptr));
+
 	if((ptr = strtok_r(NULL, delim, &save)))
 		strncpy((char*)*p2, ptr, strlen(ptr));
+
 }
 
 int check_cmd(char *plaintext, char *path1, char *path2){	//	Implement whitelist
