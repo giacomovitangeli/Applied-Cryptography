@@ -279,16 +279,20 @@ void free_var(int side){	// Buffer allocated with malloc() pointers, multiple fr
 	if(side == 1){
 		counter = cl_index_free_buf;
 		for(int i = 0; i < counter - 1; i++){
-			free((void*)cl_free_buf[i]);
-			cl_free_buf[i] = NULL;
+			if(cl_free_buf[i]){
+				free((void*)cl_free_buf[i]);
+				cl_free_buf[i] = NULL;
+			}
 		}
 		cl_index_free_buf = 0;
 	}
 	else if(side == 0){
 		counter = sv_index_free_buf;
 		for(int i = 0; i < counter - 1; i++){
-			free((void*)sv_free_buf[i]);
-			sv_free_buf[i] = NULL;
+			if(sv_free_buf[i]){
+				free((void*)sv_free_buf[i]);
+				sv_free_buf[i] = NULL;
+			}
 		}
 		sv_index_free_buf = 0;
 	}
@@ -327,34 +331,52 @@ void memory_handler(int side, int socket, int new_size, unsigned char **new_buf)
 	}	
 }
 
-void random_byte(int size, unsigned char *k){
-	
-	int ret;
-	// Seed OpenSSL PRNG
-	RAND_poll();
-
-	// Generates len random bytes
-	ret = RAND_bytes((unsigned char*)&k[0], size);
-	if(ret != 1){
-		cerr << "ERROR: RAND_bytes fails!\n";
-		exit(0);
-	}
-}
-
-/*int authenticate(int sock, user *usr){
+/*int c_authenticate(int sock, user **usr){	// auth client side - send nonce + username - receive crypto data - send crypto data
+	// Username & struct initialization
 	string username = "";
 	cout << "Please enter your username. (MAX 10 characters)" << endl;
 	cin >> username;
 	if(username.size() == 0 || username.size() > 10){
 		cout << "Invalid username" << endl;
-		return -1
+		return -1;
 	}
 
-	usr = new user;
-	strncpy(usr->username.c_str(), username.c_str(), username.size());
-	usr->u_socket = sock;
+	(*usr) = new user;
+	strncpy((*usr)->username, username.c_str(), username.size());
+	(*usr)->u_socket = sock;
 
+	// nonce + username send
+	int pay_len = 0;
+	unsigned char *nonce = NULL, *paylen_byte, *msg;
+	memory_handler(1, sock, NONCE_LEN, &nonce);
+	random_byte(NONCE_LEN, &nonce);
+
+	pay_len = NONCE_LEN + username.size();
+	memory_handler(1, sock, pay_len, &paylen_byte);
+	serialize_int(pay_len, paylen_byte);
+
+	int m_len = sizeof(int) + NONCE_LEN + username.size();
+	memory_handler(1, sock, m_len, &msg);
+
+	memcpy(msg, paylen_byte, sizeof(int));
+	memcpy((unsigned char*)&msg[sizeof(int)], nonce, NONCE_LEN);
+	memcpy((unsigned char*)&msg[sizeof(int) + NONCE_LEN], username.c_str(), username.size());
+
+	int ret;
+	if((ret = send(sock, (void*)msg, m_len, 0)) <= 0){
+		free_var(1);
+		return -1;
+	}
 	
+	// server replay
+
+
+
+
+
+
+
+	return 1;	
 }*/
 //	END UTILITY FUNCTIONS
 

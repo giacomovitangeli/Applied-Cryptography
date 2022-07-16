@@ -107,8 +107,7 @@ int get_num_file(const char*);
 void free_var(int);
 void memory_handler(int, int, int, unsigned char**);
 void split_file(unsigned char*, unsigned char**, unsigned char**);
-int authenticate(int, user*);
-void random_byte(int, unsigned char*);
+int c_authenticate(int, user*);
 //	END UTILITY FUNCTIONS
 
 
