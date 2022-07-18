@@ -75,7 +75,7 @@ extern int cl_index_free_buf;
 
 typedef struct _user {
 	int u_socket;
-	char username[10];
+	char username[11];
 	unsigned char *session_key;
 } user;
 // END STRUCT
@@ -99,7 +99,9 @@ int gcm_decrypt(unsigned char *, int ,
 
 //	START UTILITY FUNCTIONS
 void print_man();
-int check_cmd(char*, char*, char*);
+//int check_cmd(char*, char*, char*);
+int check_cmd(unsigned char*, int);
+int whitelisting_cmd(string);
 int get_cmd(char*);
 void serialize_int(int, unsigned char*);
 int read_byte(int, void*, ssize_t);
@@ -107,7 +109,8 @@ int get_num_file(const char*);
 void free_var(int);
 void memory_handler(int, int, int, unsigned char**);
 void split_file(unsigned char*, unsigned char**, unsigned char**);
-int c_authenticate(int, user*);
+int c_authenticate(int, user**);
+int s_authenticate(int, user **);
 //	END UTILITY FUNCTIONS
 
 

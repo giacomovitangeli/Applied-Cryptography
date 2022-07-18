@@ -162,48 +162,66 @@ void split_file(unsigned char *cmd, unsigned char **p1, unsigned char **p2){
 
 }
 
-int check_cmd(char *plaintext, char *path1, char *path2){	//	Implement whitelist
- 
-    	char *ptr = strtok(plaintext, "-");
+int whitelisting_cmd(string str) {
+	string check1 = "../";
+	string check2 = "..";
 
-	if(strlen(ptr) > 3 || strlen(ptr) < 2)
+	if(str.find(check1) != string::npos || str.find(check2) != string::npos)
 		return -1;
+	return 0;
+}
+
+int check_cmd(unsigned char *plaintext, int cmd){
+
+	char *to_check1 = NULL, *to_check2 = NULL, *pt_cpy = NULL, *free_ptr1 = NULL, *free_ptr2 = NULL;
 	
-	int command = get_cmd(ptr);
-	if(command > 2 && command < 7){
-		ptr = strtok(NULL, "-");
-		if(command == 5){
-			strncpy(path1, ptr, strlen(ptr));
-			path1 = realpath(ptr, NULL);
-			if(!path1)
-				return -2;
-			if(strncmp(path1, "/home/", strlen("/home/")) != 0){
-				free(path1);
-				return -2;
-			}
-			ptr = strtok(NULL, "-");
-			strncpy(path2, ptr, strlen(ptr));
-			path2 = realpath(ptr, NULL);
-			if(!path2)
-				return -2;
-			if(strncmp(path2, "/home/", strlen("/home/")) != 0){
-				free(path2);
-				return -2;
-			}
-		}
-		path1 = realpath(ptr, NULL);	
-		if(!path1)
-			return -2;
-		if(strncmp(path1, "/home/", strlen("/home/")) != 0){
-			free(path1);
-			return -2;
-		}
+	pt_cpy = (char*)calloc(strlen((char*)plaintext)+1, sizeof(char));
+	to_check1 = (char*)calloc(MAX_FILE_NAME+1, sizeof(char));
+	to_check2 = (char*)calloc(MAX_FILE_NAME+1, sizeof(char));
+
+	if(!to_check1 || !to_check2 || !pt_cpy){
+		error_handler("malloc() failed");
+		exit(0);
 	}
 
-	if(command < 0)
-		return -1;
+	free_ptr1 = to_check1;	// strtok() modify the pointer returned by calloc(), to use free a need a copy of it
+	free_ptr2 = to_check2;
 
-	return command;
+	strncpy(pt_cpy, (char*)plaintext, strlen((char*)plaintext));
+	pt_cpy[strlen((char*)plaintext)] = '\0';
+	if(cmd == 3 || cmd == 4 || cmd == 6){
+		strncpy(to_check1, (char*)plaintext, strlen((char*)plaintext));
+
+		int r = whitelisting_cmd(to_check1);
+
+		free(to_check1);
+		free(to_check2);
+		return r;
+	}
+	else{
+		if(cmd == 5) {
+			to_check1 = strtok(pt_cpy, "|");
+			to_check2 = strtok(NULL, "|");
+			//strncpy(to_check1, strtok(pt_cpy, "|"), MAX_FILE_NAME);
+			//strncpy(to_check2, strtok(NULL, "|"), MAX_FILE_NAME);
+
+			int r1 = whitelisting_cmd(to_check1);
+			int r2 = whitelisting_cmd(to_check2);
+
+			if(r1 == 0 && r2 == 0){
+				free(free_ptr1);
+				free(free_ptr2);
+				return 0;
+			}
+			else{
+				free(free_ptr1);
+				free(free_ptr2);
+				return -1;
+			}
+		}
+		else 
+			return 0;
+	}
 }
 
 int get_cmd(char* cmd){
@@ -331,8 +349,8 @@ void memory_handler(int side, int socket, int new_size, unsigned char **new_buf)
 	}	
 }
 
-/*int c_authenticate(int sock, user **usr){	// auth client side - send nonce + username - receive crypto data - send crypto data
-	// Username & struct initialization
+/*int c_authenticate(int sock, user **usr){	// auth client side - send nonce + username - receive crypto data - send session key (& other crypto data)
+	// USERNAME SELECTION & STRUCT INITIALIZATION
 	string username = "";
 	cout << "Please enter your username. (MAX 10 characters)" << endl;
 	cin >> username;
@@ -343,9 +361,10 @@ void memory_handler(int side, int socket, int new_size, unsigned char **new_buf)
 
 	(*usr) = new user;
 	strncpy((*usr)->username, username.c_str(), username.size());
+	(*usr)->username[username.size()] = '\0';
 	(*usr)->u_socket = sock;
 
-	// nonce + username send
+	// SEND NONCE + USERNAME
 	int pay_len = 0;
 	unsigned char *nonce = NULL, *paylen_byte, *msg;
 	memory_handler(1, sock, NONCE_LEN, &nonce);
@@ -368,15 +387,19 @@ void memory_handler(int side, int socket, int new_size, unsigned char **new_buf)
 		return -1;
 	}
 	
-	// server replay
+	// RECEIVE SERVER REPLAY
 
-
+	
 
 
 
 
 
 	return 1;	
+}
+
+int s_authenticate(int sock, user **usr_list){	// auth server side - receive nonce + username - send crypto data - receive session key (& other crypto data)
+
 }*/
 //	END UTILITY FUNCTIONS
 
