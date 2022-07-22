@@ -8,6 +8,7 @@ int main(){
 
 	int listner_socket, new_socket, ret, option = 1, k, fdmax;
 	struct sockaddr_in my_addr, client_addr;
+	char *sv_dir = NULL;
 	//user *list = NULL;
 
 	fd_set master;
@@ -54,6 +55,18 @@ int main(){
 
 	for(int i = 0; i < 1024; i++)
 		sv_free_buf[i] = 0;
+
+	// PATH VARIABLE
+	sv_dir = (char*)calloc(MAX_PATH+1, sizeof(char));
+	if(!sv_dir){
+		error_handler("malloc() failed");
+		exit(0);
+	}
+	getcwd(sv_dir, MAX_PATH); 
+	//cout << "path2: " << basepath2 << endl;
+	strncat(sv_dir, "/server_src/", strlen("/server_src/"));
+	//strncat((char*)basepath2, (char*)old_file_name, strlen((char*)old_file_name));
+	//cout << "path2 old (complete): " << basepath2 << endl;
 	//	Endless loop - Managing client(s) request(s) - Single process with multiple descriptors 
 
 	while(1){
@@ -136,7 +149,7 @@ int main(){
 						error_handler("nothing to read! 4");
 						close(k);
 						free_var(SERVER);
-						exit(0);
+						exit(0);https://github.com/fcarli3/openssl_chat
 					}
 					memcpy(&ct_len, ct_len_byte, sizeof(int));
 
@@ -192,10 +205,9 @@ int main(){
 						free_var(SERVER);
 						exit(0);
 					}
-					// todo: check nonce and path traversing
 					
+					// to do: check counter (ex nonce)
 					int res_check_command = check_cmd(plaintext, cmd);
-					cout << "res check: " << res_check_command << endl;
 
 					if(res_check_command == -1)
 						flag_check = '0';
@@ -308,7 +320,7 @@ replay_ls:
 							//	AAD SERIALIZATION
 							aad_len_ls = 2 + NONCE_LEN;	//opcode + lunghezza nonce + flag
 							memory_handler(SERVER, k, aad_len_ls, &aad_ls);
-							memory_handler(SERVER, k, aad_len_ls, &aad_len_byte_ls);
+							memory_handler(SERVER, k, sizeof(int), &aad_len_byte_ls);
 							
 							serialize_int(aad_len_ls, aad_len_byte_ls);
 							memcpy(aad_ls, opcode_ls, sizeof(unsigned char));
@@ -323,7 +335,7 @@ replay_ls:
 								free_var(SERVER);
 								exit(0);
 							}
-							memory_handler(SERVER, k, ct_len_ls, &ct_len_byte_ls);
+							memory_handler(SERVER, k, sizeof(int), &ct_len_byte_ls);
 							serialize_int(ct_len_ls, ct_len_byte_ls);
 
 							//	PAYLOAD LEN SERIALIZATION
@@ -428,7 +440,7 @@ replay_ls:
 							//	AAD SERIALIZATION
 							aad_len_up = 2 + NONCE_LEN;	//opcode + lunghezza nonce -- opcode = unsigned char
 							memory_handler(SERVER, k, aad_len_up, &aad_up);
-							memory_handler(SERVER, k, aad_len_up, &aad_len_byte_up);
+							memory_handler(SERVER, k, sizeof(int), &aad_len_byte_up);
 
 							serialize_int(aad_len_up, aad_len_byte_up);
 							memcpy(aad_up, opcode_up, sizeof(unsigned char));
@@ -443,7 +455,7 @@ replay_ls:
 								free_var(SERVER);
 								exit(0);
 							}
-							memory_handler(SERVER, k, ct_len_up, &ct_len_byte_up);
+							memory_handler(SERVER, k, sizeof(int), &ct_len_byte_up);
 							serialize_int(ct_len_up, ct_len_byte_up);
 
 							//	PAYLOAD LEN SERIALIZATION
@@ -730,7 +742,7 @@ replay_ls:
 							//	AAD SERIALIZATION
 							aad_len_up = 2 + NONCE_LEN;	//opcode + lunghezza nonce + flag
 							memory_handler(SERVER, k, aad_len_up, &aad_up);
-							memory_handler(SERVER, k, aad_len_up, &aad_len_byte_up);
+							memory_handler(SERVER, k, sizeof(int), &aad_len_byte_up);
 
 							serialize_int(aad_len_up, aad_len_byte_up);
 							memcpy(aad_up, opcode_up, sizeof(unsigned char));
@@ -745,7 +757,7 @@ replay_ls:
 								free_var(SERVER);
 								exit(0);
 							}
-							memory_handler(SERVER, k, ct_len_up, &ct_len_byte_up);
+							memory_handler(SERVER, k, sizeof(int), &ct_len_byte_up);
 							serialize_int(ct_len_up, ct_len_byte_up);
 
 							//	PAYLOAD LEN SERIALIZATION
@@ -796,28 +808,8 @@ replay_ls:
 							}
 							strncpy(fullpath, basepath.c_str(), basepath.size());
 							strncat(fullpath, (char*)plaintext, strlen((char*)plaintext));
-							cout << "Path: " << fullpath << endl;
+							//cout << "Path: " << fullpath << endl;
 
-							/*if(access(fullpath, F_OK) == 0){	// File exists, download doable -- double check: sostituire access con stat()
-								if(flag == '1'){
-									memory_handler(SERVER, k, 1, &plaintext_dl);
-									memory_handler(SERVER, k, 1, &ciphertext_dl);
-									plaintext_dl[0] = DUMMY_BYTE;
-								}
-								else{
-									memory_handler(SERVER, k, 25, &plaintext_dl);
-									memory_handler(SERVER, k, 25, &ciphertext_dl);
-									strncpy((char*)plaintext_dl, "Warning: path traversing", 25);
-									file_size = 0;
-									goto replay_dl;
-								}
-							}
-							else{	// Download fail - send flag = 0
-								memory_handler(SERVER, k, 64, &plaintext_dl);
-								memory_handler(SERVER, k, 64, &ciphertext_dl);
-								flag = '0';
-								strncpy((char*)plaintext_dl, "Download failed. File already exists on server.", 48);
-							}*/
 							if(flag == '0'){	// path traversal
 								memory_handler(SERVER, k, 25, &plaintext_dl);
 								memory_handler(SERVER, k, 25, &ciphertext_dl);
@@ -826,13 +818,13 @@ replay_ls:
 								goto replay_dl;
 							}
 							else{	// Check ok, no path traversal
-								if(access(fullpath, F_OK) == 0){	// File already exists, upload failed -- vedi commento a lato di plaintext sotto
+								if(access(fullpath, F_OK) != 0){	
 									memory_handler(SERVER, k, 64, &plaintext_dl);
 									memory_handler(SERVER, k, 64, &ciphertext_dl);
 									flag = '0';
-									strncpy((char*)plaintext_dl, "Upload failed. File already exists on server.", 46);
+									strncpy((char*)plaintext_dl, "Download failed. File does not exist on server.", 48);
 								}
-								else{	// Check ok, file does not exist
+								else{	// Check ok, file exists
 									memory_handler(SERVER, k, 1, &plaintext_dl);
 									memory_handler(SERVER, k, 1, &ciphertext_dl);
 									plaintext_dl[0] = DUMMY_BYTE;
@@ -893,7 +885,7 @@ replay_dl:
 							//	AAD SERIALIZATION
 							aad_len_dl = 2 + NONCE_LEN + sizeof(int);	//opcode + flag + lunghezza nonce + file size 
 							memory_handler(SERVER, k, aad_len_dl, &aad_dl);
-							memory_handler(SERVER, k, aad_len_dl, &aad_len_byte_dl);
+							memory_handler(SERVER, k, sizeof(int), &aad_len_byte_dl);
 
 							serialize_int(aad_len_dl, aad_len_byte_dl);
 							memcpy(aad_dl, opcode_dl, sizeof(unsigned char));
@@ -910,7 +902,7 @@ replay_dl:
 								free_var(SERVER);
 								exit(0);
 							}
-							memory_handler(SERVER, k, ct_len_dl, &ct_len_byte_dl);
+							memory_handler(SERVER, k, sizeof(int), &ct_len_byte_dl);
 							serialize_int(ct_len_dl, ct_len_byte_dl);
 
 							//	PAYLOAD LEN SERIALIZATION
@@ -1009,7 +1001,7 @@ replay_dl:
 									//	AAD SERIALIZATION
 									aad_len_dl = 2 + NONCE_LEN;	//opcode + flag + lunghezza nonce + file size 
 									memory_handler(SERVER, k, aad_len_dl, &aad_dl);
-									memory_handler(SERVER, k, aad_len_dl, &aad_len_byte_dl);
+									memory_handler(SERVER, k, sizeof(int), &aad_len_byte_dl);
 
 									serialize_int(aad_len_dl, aad_len_byte_dl);
 									memcpy(aad_dl, opcode_dl, sizeof(unsigned char));
@@ -1026,7 +1018,7 @@ replay_dl:
 										free_var(SERVER);
 										exit(0);
 									}
-									memory_handler(SERVER, k, ct_len_dl, &ct_len_byte_dl);
+									memory_handler(SERVER, k, sizeof(int), &ct_len_byte_dl);
 									serialize_int(ct_len_dl, ct_len_byte_dl);
 
 									//	PAYLOAD LEN SERIALIZATION
@@ -1099,7 +1091,7 @@ replay_dl:
 							//	AAD SERIALIZATION
 							aad_len_dl = 2 + NONCE_LEN;	//opcode + flag + lunghezza nonce + file size 
 							memory_handler(SERVER, k, aad_len_dl, &aad_dl);
-							memory_handler(SERVER, k, aad_len_dl, &aad_len_byte_dl);
+							memory_handler(SERVER, k, sizeof(int), &aad_len_byte_dl);
 
 							serialize_int(aad_len_dl, aad_len_byte_dl);
 							memcpy(aad_dl, opcode_dl, sizeof(unsigned char));
@@ -1116,7 +1108,7 @@ replay_dl:
 								free_var(SERVER);
 								exit(0);
 							}
-							memory_handler(SERVER, k, ct_len_dl, &ct_len_byte_dl);
+							memory_handler(SERVER, k, sizeof(int), &ct_len_byte_dl);
 							serialize_int(ct_len_dl, ct_len_byte_dl);
 	
 							//	PAYLOAD LEN SERIALIZATION
@@ -1219,9 +1211,7 @@ replay_dl:
 								strncpy(fullpath_new, basepath.c_str(), basepath.size() + 1);
 								strncat(fullpath_new, new_file_name, strlen(new_file_name));
 								cout << "path old: " << fullpath_old << endl << "path new: " << fullpath_new << endl;
-								
-
-
+				
 								while((en = readdir(dir)) != NULL){
 									if(!strcmp(en->d_name, ".") || !strcmp(en->d_name, ".."))
 										continue;
@@ -1265,7 +1255,7 @@ replay_dl:
 							   	// AAD SERIALIZATION
 							   	aad_len_mv = 2 + NONCE_LEN; //opcode + flag + lunghezza nonce 
 							   	memory_handler(SERVER, k, aad_len_mv, &aad_mv);
-							   	memory_handler(SERVER, k, aad_len_mv, &aad_len_byte_mv);
+							   	memory_handler(SERVER, k, sizeof(int), &aad_len_byte_mv);
 
 							   	serialize_int(aad_len_mv, aad_len_byte_mv);
 								memcpy(aad_mv, opcode_mv, sizeof(unsigned char));
@@ -1280,7 +1270,7 @@ replay_dl:
 							       		free_var(SERVER);
 							       		exit(0);
 							   	}
-							   	memory_handler(SERVER, k, ct_len_mv, &ct_len_byte_mv);
+							   	memory_handler(SERVER, k, sizeof(int), &ct_len_byte_mv);
 							   	serialize_int(ct_len_mv, ct_len_byte_mv);
 
 								// PAYLOAD LEN SERIALIZATION
@@ -1406,7 +1396,7 @@ replay_rm:
 						        	// AAD SERIALIZATION
 								aad_len_rm = 2 + NONCE_LEN; //opcode + lunghezza nonce + flag
 								memory_handler(SERVER, k, aad_len_rm, &aad_rm);
-								memory_handler(SERVER, k, aad_len_rm, &aad_len_byte_rm);
+								memory_handler(SERVER, k, sizeof(int), &aad_len_byte_rm);
 
 								serialize_int(aad_len_rm, aad_len_byte_rm);
 								memcpy(aad_rm, opcode_rm, sizeof(unsigned char));
@@ -1422,7 +1412,7 @@ replay_rm:
 									free(fullpath);
 									exit(0);
 								}
-								memory_handler(SERVER, k, ct_len_rm, &ct_len_byte_rm);
+								memory_handler(SERVER, k, sizeof(int), &ct_len_byte_rm);
 								serialize_int(ct_len_rm, ct_len_byte_rm);
 
 						        	// PAYLOAD LEN SERIALIZATION
@@ -1473,6 +1463,7 @@ replay_rm:
 							break;
 						}
 					}
+					free(sv_dir);
                 		}
             		}
 		}

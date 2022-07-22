@@ -44,7 +44,7 @@
 
 //  START SIZE LMIT
 #define MAX_FILE_NAME 	24
-#define MAX_FILSE_SIZE	2^^32
+#define MAX_FILE_SIZE	2^^32
 //  END SIZE LIMIT
 
 #define MAX_PATH	512
@@ -74,9 +74,12 @@ extern unsigned char *cl_free_buf[1024];
 extern int cl_index_free_buf;
 
 typedef struct _user {
-	int u_socket;
+	int u_cl_socket;
+	int u_sv_socket;
 	char username[11];
 	unsigned char *session_key;
+
+	*_user next;
 } user;
 // END STRUCT
 
@@ -94,21 +97,35 @@ int gcm_decrypt(unsigned char *, int ,
                 unsigned char *,
                 unsigned char *, int,
                 unsigned char *);
+int digital_sign(EVP_PKEY*, unsigned char*, int, unsigned char*);
+int digital_sign_verify(EVP_PKEY*, unsigned char*, int, unsigned char*, int);
+int certificate_validation(string, string, X509*);
 //	END CRYPTO UTILITY FUNCTIONS DECLARATIONS
 
 
 //	START UTILITY FUNCTIONS
 void print_man();
-//int check_cmd(char*, char*, char*);
+
 int check_cmd(unsigned char*, int);
 int whitelisting_cmd(string);
 int get_cmd(char*);
+
 void serialize_int(int, unsigned char*);
 int read_byte(int, void*, ssize_t);
 int get_num_file(const char*);
+
 void free_var(int);
 void memory_handler(int, int, int, unsigned char**);
+
 void split_file(unsigned char*, unsigned char**, unsigned char**);
+
+int serialize_certificate(string, unsigned char*);
+void deserialize_certificate(X509*, unsigned char*, int);
+void serialize_pubkey(EVP_PKEY*, int*, unsigned char**);
+
+void pubkey_to_PKEY(EVP_PKEY**, unsigned char*, int);
+void privkey_to_PKEY(EVP_PKEY**, unsigned char*, int);
+
 int c_authenticate(int, user**);
 int s_authenticate(int, user **);
 //	END UTILITY FUNCTIONS

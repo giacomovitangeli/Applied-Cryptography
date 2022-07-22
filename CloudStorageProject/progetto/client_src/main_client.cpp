@@ -9,7 +9,7 @@ int main(){
 	int socket_d, ret, cmd;
 	unsigned char *command = NULL, *command_copy = NULL, *path1 = NULL, *path2 = NULL, *file1 = NULL, *file2 = NULL;
 	struct sockaddr_in sv_addr;
-	//user *this_user;
+	user *this_user;
 
 	const char cl_dir[] = "/home/giacomo/Desktop/progetto/client_src/";
 	//	Cleanup and initialization	 
@@ -40,7 +40,7 @@ int main(){
 	print_man();
 
 	// AUTH PHASE
-	//while((ret = c_authenticate(socket_d, &this_user)) < 0)
+	while((ret = c_authenticate(socket_d, &this_user)) < 0)
 	// Endless loop - Managing entire session 
 
 	while(1) {
@@ -64,23 +64,23 @@ int main(){
 			memory_handler(CLIENT, socket_d, 16, &file2);
 			split_file(command_copy, &file1, &file2);
 			if(file1){
-				cout << "file1: " << file1 << " len: " << strlen((char*)file1) << endl;
+				//cout << "file1: " << file1 << " len: " << strlen((char*)file1) << endl;
 				strncpy((char*)path1, cl_dir, strlen(cl_dir));
 				path1 = (unsigned char*)strncat((char*)path1, (char*)file1, strlen((char*)file1));
-				cout << "path1: " << path1 << endl;
+				//cout << "path1: " << path1 << endl;
 			}
-			if(file2)
-				cout << "file2: " << file2 << endl;
+			//if(file2)
+				//cout << "file2: " << file2 << endl;
 		}
 		else if(cmd == 3 || cmd == 4 || cmd == 6){
 			memory_handler(CLIENT, socket_d, 64, &path1);
 			memory_handler(CLIENT, socket_d, 16, &file1);
 			split_file(command_copy, &file1, &file2);
 			if(file1){
-				cout << "file1: " << file1 << " len: " << strlen((char*)file1) << endl;
+				//cout << "file1: " << file1 << " len: " << strlen((char*)file1) << endl;
 				strncpy((char*)path1, cl_dir, strlen(cl_dir));
 				path1 = (unsigned char*)strncat((char*)path1, (char*)file1, strlen((char*)file1));
-				cout << "path1: " << path1 << endl;
+				//cout << "path1: " << path1 << endl;
 			}
 		}
 
@@ -98,7 +98,8 @@ int main(){
 				memory_handler(CLIENT, socket_d, NONCE_LEN, &nonce);
 				memory_handler(CLIENT, socket_d, TAG_LEN, &tag);
 				memory_handler(CLIENT, socket_d, 1, &opcode);
-				memory_handler(CLIENT, socket_d, 512, &ciphertext);
+				memory_handler(CLIENT, socket_d, 1, &plaintext);
+				memory_handler(CLIENT, socket_d, 1, &ciphertext);
 				memory_handler(CLIENT, socket_d, IV_LEN, &iv);
 
 				rc = RAND_bytes(nonce, NONCE_LEN);
@@ -116,7 +117,7 @@ int main(){
 					exit(0);
 				}
 				opcode[0] = '2';
-				memset(ciphertext, 0, 512);
+				memset(ciphertext, 0, 1);
 
 				//	SERIALIZATION
 
@@ -129,7 +130,6 @@ int main(){
 				memcpy(&aad[1], nonce, NONCE_LEN);
 
 				//	CIPHERTEXT LEN SERIALIZATION
-				memory_handler(CLIENT, socket_d, 512, &plaintext);
 				plaintext[0] = DUMMY_BYTE;
 				ct_len = gcm_encrypt(plaintext, sizeof(char), aad, aad_len, key, iv, IV_LEN, ciphertext, tag);
 				if(ct_len <= 0){ 
@@ -139,7 +139,7 @@ int main(){
 					exit(0);
 				}
 
-				memory_handler(CLIENT, socket_d, ct_len, &ct_len_byte);
+				memory_handler(CLIENT, socket_d, sizeof(int), &ct_len_byte);
 				serialize_int(ct_len, ct_len_byte);
 
 				//	PAYLOAD LEN SERIALIZATION
@@ -167,17 +167,16 @@ int main(){
 					exit(0);
 				}
 
-				cout << endl << endl;
+				cout << endl;
 
 				//	CLEAN UP VARIABLES
-				memset(iv, 0, IV_LEN);
-				memset(tag, 0, TAG_LEN);
-				memset(plaintext, 0, 512);
-				memset(ciphertext, 0, 512);
-				memset(aad, 0, aad_len);
-				memset(ct_len_byte, 0, sizeof(int));
-				memset(aad_len_byte, 0, sizeof(int));
-				memset(payload_len_byte, 0, sizeof(int));
+				free_var(CLIENT);
+
+				//	MALLOC & RAND VARIABLES
+				memory_handler(CLIENT, socket_d, NONCE_LEN, &nonce);
+				memory_handler(CLIENT, socket_d, TAG_LEN, &tag);
+				memory_handler(CLIENT, socket_d, 1, &opcode);
+				memory_handler(CLIENT, socket_d, IV_LEN, &iv);
 				ct_len = 0;
 				aad_len = 0;
 				payload_len = 0;
@@ -202,7 +201,8 @@ int main(){
 				}
 				memcpy(&msg_len, rcv_msg, sizeof(int));
 
-				//	READ AAD_LEN & AAD
+				//	READ AAD_LEN & AAD			
+				memory_handler(CLIENT, socket_d, sizeof(int), &aad_len_byte);
 				if((ret = read_byte(socket_d, (void*)aad_len_byte, sizeof(int))) < 0){
 					error_handler("recv() [aad_len_byte] failed");
 					free_var(CLIENT);
@@ -216,6 +216,7 @@ int main(){
 					exit(0);
 				}
 				memcpy(&aad_len, aad_len_byte, sizeof(int));
+				memory_handler(CLIENT, socket_d, aad_len, &aad);
 				if((ret = read_byte(socket_d, (void*)aad, aad_len)) < 0){
 					error_handler("recv() [aad] failed");
 					free_var(CLIENT);
@@ -231,6 +232,7 @@ int main(){
 				cmd = int(aad[0]) - OFFSET;		
 				flag = aad[17];
 				//	READ CT_LEN & CIPHERTEXT
+				memory_handler(CLIENT, socket_d, sizeof(int), &ct_len_byte);
 				if((ret = read_byte(socket_d, (void*)ct_len_byte, sizeof(int))) < 0){
 					error_handler("recv() [ct_len_byte] failed");
 					free_var(CLIENT);
@@ -245,6 +247,9 @@ int main(){
 				}
 				memcpy(&ct_len, ct_len_byte, sizeof(int));
 
+				// alloc() pt & ct correct size
+				memory_handler(CLIENT, socket_d, ct_len, &plaintext);
+				memory_handler(CLIENT, socket_d, ct_len, &ciphertext);
 				if((ret = read_byte(socket_d, (void*)ciphertext, ct_len)) < 0){
 					error_handler("recv() [ciphertext] failed");
 					free_var(CLIENT);
@@ -316,12 +321,12 @@ int main(){
 				struct stat *s_buf;	
 
 				//	MALLOC & RAND VARIABLES
-				memory_handler(CLIENT, socket_d, 512, &plaintext);
+				memory_handler(CLIENT, socket_d, MAX_FILE_NAME, &plaintext);
+				memory_handler(CLIENT, socket_d, MAX_FILE_NAME, &ciphertext);
 				memory_handler(CLIENT, socket_d, NONCE_LEN, &nonce);
 				memory_handler(CLIENT, socket_d, IV_LEN, &iv);
 				memory_handler(CLIENT, socket_d, TAG_LEN, &tag);
 				memory_handler(CLIENT, socket_d, 1, &opcode);
-				memory_handler(CLIENT, socket_d, 512, &ciphertext);
 
 				rc = RAND_bytes(nonce, NONCE_LEN);
 				if(rc != 1){
@@ -339,7 +344,7 @@ int main(){
 				}
 
 				opcode[0] = '3';
-				memset(ciphertext, 0, 512);
+				//memset(ciphertext, 0, 512);
 				
 				//	FILE STAT
 				s_buf = (struct stat*)malloc(sizeof(struct stat));
@@ -367,14 +372,14 @@ int main(){
 				//	SERIALIZATION UP-1
 		
 				//	AAD SERIALIZATION
-				aad_len = 1 + NONCE_LEN + sizeof(int);	//opcode + lunghezza nonce + int(file size) -- opcode = unsigned char
+				aad_len = 1 + NONCE_LEN + sizeof(int);	//opcode + lunghezza nonce + int(file size) 
 				memory_handler(CLIENT, socket_d, aad_len, &aad);
 				memory_handler(CLIENT, socket_d, sizeof(int), &aad_len_byte);
 
 				serialize_int(aad_len, aad_len_byte);
 				memcpy(aad, opcode, sizeof(unsigned char));
 				memcpy(&aad[1], nonce, NONCE_LEN);
-				memcpy(&aad[17], &file_size, sizeof(int));	// no compilation/execution errors, check functionality when implemented server side
+				memcpy(&aad[17], &file_size, sizeof(int));
 
 				//	CIPHERTEXT LEN SERIALIZATION
 				ct_len = gcm_encrypt(plaintext, strlen((char*)plaintext), aad, aad_len, key, iv, IV_LEN, ciphertext, tag);
@@ -384,11 +389,11 @@ int main(){
 					close(socket_d);
 					exit(0);
 				}
-				memory_handler(CLIENT, socket_d, ct_len, &ct_len_byte);
+				memory_handler(CLIENT, socket_d, sizeof(int), &ct_len_byte);
 				serialize_int(ct_len, ct_len_byte);
 
 				//	PAYLOAD LEN SERIALIZATION
-				payload_len = sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;	// ricalcolo per upload
+				payload_len = sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;
 				memory_handler(CLIENT, socket_d, sizeof(int), &payload_len_byte);
 				serialize_int(payload_len, payload_len_byte);
 
@@ -416,8 +421,8 @@ int main(){
 				//	CLEAN UP VARIABLES
 				memset(iv, 0, IV_LEN);
 				memset(tag, 0, TAG_LEN);
-				memset(plaintext, 0, 512);
-				memset(ciphertext, 0, 512);
+				memset(plaintext, 0, MAX_FILE_NAME);
+				memset(ciphertext, 0, MAX_FILE_NAME);
 				memset(aad, 0, aad_len);
 				memset(ct_len_byte, 0, sizeof(int));
 				memset(aad_len_byte, 0, sizeof(int));
@@ -631,7 +636,7 @@ int main(){
 							close(socket_d);
 							exit(0);
 						}
-						memory_handler(CLIENT, socket_d, ct_len, &data_ct_len_byte);
+						memory_handler(CLIENT, socket_d, sizeof(int), &data_ct_len_byte);
 						serialize_int(ct_len, data_ct_len_byte);
 
 						// PAYLOAD SERIALIZATION
@@ -667,7 +672,7 @@ int main(){
 					}
 				}
 				// send last chunk or the single chunk composing the file
-				cout << "Proceding to send the last chunk" << endl << "size res: " << size_res << endl;
+				//cout << "Proceding to send the last chunk" << endl << "size res: " << size_res << endl;
 				free_var(CLIENT);
 				memory_handler(CLIENT, socket_d, file_size, &data_pt);
 				memory_handler(CLIENT, socket_d, file_size, &data_ct);
@@ -722,7 +727,7 @@ int main(){
 					close(socket_d);
 					exit(0);
 				}
-				memory_handler(CLIENT, socket_d, ct_len, &data_ct_len_byte);
+				memory_handler(CLIENT, socket_d, sizeof(int), &data_ct_len_byte);
 				serialize_int(ct_len, data_ct_len_byte);
 
 				// PAYLOAD SERIALIZATION
@@ -750,7 +755,7 @@ int main(){
 					close(socket_d);
 					exit(0);
 				}
-				//memset(data_pt, 0, CHUNK);
+				cout << "Sent last chunk" << endl;
 				
 				//	RECEIVING OK
 
@@ -896,7 +901,7 @@ int main(){
 				}
 				strncpy(fullpath, cl_dir, strlen(cl_dir));
 				fullpath = strncat(fullpath, (char*)file1, strlen((char*)file1));
-				cout << "Fullpath: " << fullpath << endl;
+				//cout << "Fullpath: " << fullpath << endl;
 				if(access(fullpath, F_OK) == 0){	// File already exist
 					error_handler("File already exists on this device.");
 					free(fullpath);
@@ -952,7 +957,7 @@ int main(){
 					close(socket_d);
 					exit(0);
 				}
-				memory_handler(CLIENT, socket_d, ct_len, &ct_len_byte);
+				memory_handler(CLIENT, socket_d, sizeof(int), &ct_len_byte);
 				serialize_int(ct_len, ct_len_byte);
 
 				//	PAYLOAD LEN SERIALIZATION
@@ -1165,7 +1170,7 @@ int main(){
 						exit(0);
 					}
 					if(ret == 0){
-						error_handler("nothing to read! 1");	// double free if server down -- #malloc = 12, index = 12
+						error_handler("nothing to read! 1");
 						free_var(CLIENT);
 						fclose(dl_file);
 						remove(fullpath);
@@ -1378,7 +1383,7 @@ int main(){
 				// AAD SERIALIZATION
 				aad_len = 1 + NONCE_LEN + sizeof(int); //opcode + lunghezza nonce + int(file size) -- opcode = unsigned char
 				memory_handler(CLIENT, socket_d, aad_len, &aad);
-				memory_handler(CLIENT, socket_d, aad_len, &aad_len_byte);
+				memory_handler(CLIENT, socket_d, sizeof(int), &aad_len_byte);
 
 				serialize_int(aad_len, aad_len_byte);
 				memcpy(aad, opcode, sizeof(unsigned char));
@@ -1392,7 +1397,7 @@ int main(){
 				    close(socket_d);
 				    exit(0);
 				}
-				memory_handler(CLIENT, socket_d, ct_len, &ct_len_byte);
+				memory_handler(CLIENT, socket_d, sizeof(int), &ct_len_byte);
 				serialize_int(ct_len, ct_len_byte);
 
 				// PAYLOAD LEN SERIALIZATION
@@ -1546,9 +1551,9 @@ int main(){
 				}
 
 				if(aad[17] == '1')
-					cout << "Flag: " << aad[17] << " Rename complete successfully" << endl;
+					cout << "Rename complete successfully" << endl;
 				else
-					cout << "Flag: " << aad[17] << "Something went wrong. Rename failed." << endl;
+					cout << "Something went wrong. Rename failed." << endl;
 
 				free_var(CLIENT);
 				break;
@@ -1590,7 +1595,7 @@ int main(){
 				//	AAD SERIALIZATION
 				aad_len = 1 + NONCE_LEN;	//opcode + lunghezza nonce -- opcode = unsigned char
 				memory_handler(CLIENT, socket_d, aad_len, &aad);
-				memory_handler(CLIENT, socket_d, aad_len, &aad_len_byte);
+				memory_handler(CLIENT, socket_d, sizeof(int), &aad_len_byte);
 
 				serialize_int(aad_len, aad_len_byte);
 				memcpy(aad, opcode, sizeof(unsigned char));
@@ -1604,7 +1609,7 @@ int main(){
 				    close(socket_d);
 				    exit(0);
 				}
-				memory_handler(CLIENT, socket_d, ct_len, &ct_len_byte);
+				memory_handler(CLIENT, socket_d, sizeof(int), &ct_len_byte);
 				serialize_int(ct_len, ct_len_byte);
 
 				//	PAYLOAD LEN SERIALIZATION
@@ -1759,9 +1764,9 @@ int main(){
 				}
 
 				if(aad[17] == '1')
-					cout << "Flag: " << aad[17] << "File deleted from cloud." << endl;
+					cout << "File deleted from cloud." << endl;
 				else
-					cout << "Flag: " << aad[17] << "Something went wrong. Remove failed." << endl << plaintext << endl;
+					cout << "Something went wrong. Remove failed." << endl << plaintext << endl;
 
 				free_var(CLIENT);
 				break;
