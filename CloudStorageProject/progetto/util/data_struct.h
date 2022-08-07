@@ -27,6 +27,8 @@
 #include <iomanip>
 #include <fstream>
 #include <openssl/err.h>
+#include <openssl/pem.h>
+//#include <ossl.h>
 
 #define PORT 4242
 
@@ -54,6 +56,7 @@
 #define DUMMY_BYTE	'x'
 #define OFFSET		48
 #define CHUNK		1048576
+#define CA_path_folder	"/client_src/"
 
 // CL & SV IDENTIFIER
 #define CLIENT		1
@@ -79,7 +82,7 @@ typedef struct _user {
 	char username[11];
 	unsigned char *session_key;
 
-	*_user next;
+	_user *next;
 } user;
 // END STRUCT
 
@@ -97,6 +100,8 @@ int gcm_decrypt(unsigned char *, int ,
                 unsigned char *,
                 unsigned char *, int,
                 unsigned char *);
+int envelope_encrypt(EVP_PKEY*, unsigned char*, int, unsigned char*, int, unsigned char*, unsigned char*);
+int envelope_decrypt(EVP_PKEY*, unsigned char*, int, unsigned char*, int, unsigned char*, unsigned char*);
 int digital_sign(EVP_PKEY*, unsigned char*, int, unsigned char*);
 int digital_sign_verify(EVP_PKEY*, unsigned char*, int, unsigned char*, int);
 int certificate_validation(string, string, X509*);

@@ -133,10 +133,91 @@ int gcm_decrypt(unsigned char *cipher, int cipher_len,
     }
 }
 
+int envelope_encrypt(EVP_PKEY* public_key, unsigned char* plaintext, int pt_len, unsigned char* sym_key_enc, int sym_key_len, unsigned char* iv, unsigned char* ciphertext){
+
+	int ret = 0;
+	int outlen = 0;
+	int ct_len = 0;
+
+	// Create and initialise the context 
+	EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+	if(!ctx){
+		error_handler("creazione contesto fallita");
+		return -1;
+	}
+
+	// Generate the IV and the symmetric key and encrypt the symmetric key 
+	ret = EVP_SealInit(ctx, EVP_aes_256_cbc(), &sym_key_enc, &sym_key_len, iv, &public_key, 1);
+	if(ret != 1){
+		error_handler("seal init contesto fallito");
+	    	return -1;
+	}
+
+	// Encrypt the plaintext 
+	ret = EVP_SealUpdate(ctx, ciphertext, &outlen, (unsigned char*)plaintext, pt_len);
+	if(ret != 1){
+		error_handler("seal update contesto fallito");
+	    	return -1;
+	}
+	ct_len = outlen;
+
+	// Finalize the encryption and add the padding
+	ret = EVP_SealFinal(ctx, ciphertext + ct_len, &outlen);
+	if(ret != 1){
+		error_handler("seal final contesto fallito");
+	    	return -1;
+	}
+	ct_len += outlen;
+
+	EVP_CIPHER_CTX_free(ctx);
+
+	return ct_len;
+}
+
+int envelope_decrypt(EVP_PKEY* private_key, unsigned char* ciphertext, int ct_len, unsigned char* sym_key_enc, int sym_key_len, unsigned char* iv, unsigned char* plaintext){
+
+	int ret = 0;
+	int outlen = 0;
+	int pt_len = 0;
+
+	// Create and initialise the context 
+	EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+	if(!ctx){
+		error_handler("creazione contesto fallita");
+		return -1;
+	}
+
+	// Decrypt the symmetric key that will be used to decrypt the ciphertext 
+	ret = EVP_OpenInit(ctx, EVP_aes_256_cbc(), sym_key_enc, sym_key_len, iv, private_key);
+	if(ret != 1){
+		error_handler("open init contesto fallito");
+	    	return -1;
+	}
+
+	// Decrypt the ciphertext 
+	ret = EVP_OpenUpdate(ctx, plaintext, &outlen, ciphertext, ct_len);
+	if(ret != 1){
+		error_handler("open update contesto fallito");
+	    	return -1;
+	}
+	pt_len += outlen;
+
+	ret = EVP_OpenFinal(ctx, plaintext + pt_len, &outlen);
+	if(ret != 1){
+		error_handler("open final contesto fallito");
+	    	return -1;
+	}
+
+	pt_len += outlen;
+	EVP_CIPHER_CTX_free(ctx);
+
+	return pt_len;
+}
+
 int digital_sign(EVP_PKEY *private_key, unsigned char *to_sign, int to_sign_len, unsigned char *sign_buf){
-	EVP_MD* md = EVP_sha256();
+	const EVP_MD* md = EVP_sha256();
 	int ret = -1;
-	int sign_len = 0;
+	unsigned int sign_len = 0;
 
 	// CONTEST CREATION
 	EVP_MD_CTX* ctx;
@@ -170,7 +251,7 @@ int digital_sign(EVP_PKEY *private_key, unsigned char *to_sign, int to_sign_len,
 }
 
 int digital_sign_verify(EVP_PKEY *public_key, unsigned char *sign_buf, int sign_len, unsigned char *to_verify, int to_verify_len){
-	EVP_MD* md = EVP_sha256();
+	const EVP_MD* md = EVP_sha256();
 	int ret = -1;
 
 	// CONTEST CREATION
@@ -606,7 +687,7 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 	(*usr)->u_sv_socket = 0;
 	(*usr)->next = NULL;
 
-	// SEND NONCE + USERNAME
+	// SEND NONCE + USERNAME	[pay len][nonce][username]
 	int pay_len = 0, rc = 0;
 	unsigned char *nonce = NULL, *paylen_byte, *msg;
 	memory_handler(1, sock, NONCE_LEN, &nonce);
@@ -614,7 +695,7 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 	if(rc != 1){
 		error_handler("nonce generation failed");
 		free_var(CLIENT);
-		close(socket_d);
+		close(sock);
 		exit(0);
 	}
 
@@ -635,16 +716,17 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 		return -1;
 	}
 	
-	// RECEIVE SERVER REPLAY
+	// RECEIVE SERVER REPLAY	[pay_len][sign len][sign][eph key len][eph key][cert len][cert]
 
-	int payload_len, ct_len, sign_len, key_eph_len, cert_buf_len;						// DIMENSIONI INT
-    	unsigned char *sign_buf, *key_eph_buf, *cert_buf;							// BUFFER
-	unsigned char *payload_len_byte, *ct_len_byte, *sign_len_byte, *key_eph_len_byte, *cert_buf_len_byte;	// DIMENSIONI BYTE
+	int payload_len, ct_len, sign_len, key_eph_len, cert_buf_len, sign_verify_len, session_key_len;			// DIMENSIONI INT
+    	unsigned char *sign_buf, *key_eph_buf, *cert_buf, *sign_verify_buf, *session_key;				// BUFFER
+	unsigned char *payload_len_byte, *ct_len_byte, *sign_len_byte, *key_eph_len_byte, *cert_buf_len_byte;		// DIMENSIONI BYTE
+	EVP_PKEY *pubK_sv = NULL, *privK_cl = NULL;
 	X509 *cert = NULL;
 
 	//	READ PAYLOAD_LEN
-	memory_handler(CLIENT, socket_d, sizeof(int), &payload_len_byte);
-	if((ret = read_byte(socket_d, (void*)payload_len_byte, sizeof(int))) < 0){
+	memory_handler(CLIENT, sock, sizeof(int), &payload_len_byte);
+	if((ret = read_byte(sock, (void*)payload_len_byte, sizeof(int))) < 0){
 		error_handler("recv() [rcv_msg] failed");
 		free_var(CLIENT);
 		close(sock);
@@ -745,6 +827,71 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 		exit(0);
 	}
 
+	//	EXTRACT PUBLIC KEY FROM CERT
+	string pem_path = "CA/CA_cert.pem";
+	string crl_path = "CA/CA_revocation_list.pem";
+	string CA_path = CA_path_folder + pem_path;
+	string CA_CRL_path = CA_path_folder + crl_path;
+	deserialize_certificate(&cert, cert_buf, cert_buf_len);
+	ret = certificate_validation(CA_path, CA_CRL_path, cert);
+	if(ret != 1){
+		error_handler("Certificate validation failed");
+		free_var(CLIENT);
+		close(sock);
+		exit(0);
+	}
+
+	pubK_sv = X509_get_pubkey(cert);
+	if(!pubK_sv){
+		error_handler("PubKey extraction failed");
+		free_var(CLIENT);
+		close(sock);
+		exit(0);
+	}
+
+	//	SIGN VERIFICATION	<nonce||key_pub_eph>
+	sign_verify_len = 2*NONCE_LEN + key_eph_len;
+	memory_handler(CLIENT, sock, sign_verify_len, &sign_verify_buf);
+	
+	memcpy(sign_verify_buf, nonce, NONCE_LEN);
+	memcpy((unsigned char*)&sign_verify_buf[NONCE_LEN], key_eph_buf, key_eph_len);
+
+	ret = digital_sign_verify(pubK_sv, sign_buf, sign_len, sign_verify_buf, sign_verify_len);
+	if(ret != 1){
+		error_handler("Sign not valid");
+		free_var(CLIENT);
+		close(sock);
+		exit(0);
+	}
+
+
+	//	SEND SESSION KEY TO SERVER	[pay len][sign len][sign][ciph len][ciphertext][len cripted key][cripted key][iv]
+
+	int payload_len_r, sign_len_r, sign_verify_len_r, s_key_enc_len;		// DIMENSIONI INT
+    	unsigned char *sign_buf_r, *key_eph_buf_r, *sign_verify_buf_r, *s_key_enc, *iv;				// BUFFER
+	unsigned char *payload_len_byte_r, *sign_len_byte_r, *key_eph_len_byte_r;		// DIMENSIONI BYTE
+	EVP_PKEY *eph_key = NULL;
+	//	READ PRIV KEY FROM PEM FILE
+	string key_path = "/client_src/keys/" + username + "_private_key.pem";
+	FILE *pem_fd = fopen(key_path.c_str(), "r");
+	if(!pem_fd){
+		error_handler("Can't open PEM file");
+		free_var(CLIENT);
+		close(sock);
+		exit(0);
+	}
+	privK_cl = PEM_read_PrivateKey(pem_fd, NULL, NULL, NULL);
+
+	payload_len_r = 0;
+
+	session_key_len =  EVP_CIPHER_key_length(EVP_aes_256_gcm());
+	ret = RAND_bytes(session_key, session_key_len);
+	pubkey_to_PKEY(&eph_key, key_eph_buf, key_eph_len);
+	ct_len = envelope_encrypt(eph_key, session_key, session_key_len, s_key_enc, s_key_enc_len, iv, ciphertext);	// inizializzare iv e ciphertext			
+	sign_len_r = key_eph_len + ct_len;
+
+	
+	
 	return 1;	
 }
 

@@ -149,7 +149,7 @@ int main(){
 						error_handler("nothing to read! 4");
 						close(k);
 						free_var(SERVER);
-						exit(0);https://github.com/fcarli3/openssl_chat
+						exit(0);
 					}
 					memcpy(&ct_len, ct_len_byte, sizeof(int));
 
