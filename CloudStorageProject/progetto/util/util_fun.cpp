@@ -720,7 +720,7 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 
 	int payload_len, ct_len, sign_len, key_eph_len, cert_buf_len, sign_verify_len, session_key_len;			// DIMENSIONI INT
     	unsigned char *sign_buf, *key_eph_buf, *cert_buf, *sign_verify_buf, *session_key;				// BUFFER
-	unsigned char *payload_len_byte, *ct_len_byte, *sign_len_byte, *key_eph_len_byte, *cert_buf_len_byte;		// DIMENSIONI BYTE
+	unsigned char *payload_len_byte, *sign_len_byte, *key_eph_len_byte, *cert_buf_len_byte;		// DIMENSIONI BYTE
 	EVP_PKEY *pubK_sv = NULL, *privK_cl = NULL;
 	X509 *cert = NULL;
 
@@ -867,10 +867,12 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 
 	//	SEND SESSION KEY TO SERVER	[pay len][sign len][sign][ciph len][ciphertext][len cripted key][cripted key][iv]
 
-	int payload_len_r, sign_len_r, sign_verify_len_r, s_key_enc_len;		// DIMENSIONI INT
-    	unsigned char *sign_buf_r, *key_eph_buf_r, *sign_verify_buf_r, *s_key_enc, *iv;				// BUFFER
-	unsigned char *payload_len_byte_r, *sign_len_byte_r, *key_eph_len_byte_r;		// DIMENSIONI BYTE
+	int sign_len_r, s_key_enc_len, resp_msg_len, aad_len;					// DIMENSIONI INT
+    	unsigned char *s_key_enc, *iv, *ciphertext, *resp_msg;		// BUFFER
+	unsigned char *sign_len_byte_r, *s_key_enc_len_byte, *ct_len_byte, *aad_len_byte;				// DIMENSIONI BYTE
+	unsigned char *to_sign, *buf_signed, *aad;
 	EVP_PKEY *eph_key = NULL;
+
 	//	READ PRIV KEY FROM PEM FILE
 	string key_path = "/client_src/keys/" + username + "_private_key.pem";
 	FILE *pem_fd = fopen(key_path.c_str(), "r");
@@ -882,21 +884,95 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 	}
 	privK_cl = PEM_read_PrivateKey(pem_fd, NULL, NULL, NULL);
 
-	payload_len_r = 0;
-
 	session_key_len =  EVP_CIPHER_key_length(EVP_aes_256_gcm());
+	s_key_enc_len = EVP_PKEY_size(eph_key);
+
+	memory_handler(CLIENT, sock, EVP_CIPHER_iv_length(EVP_aes_256_cbc()), &iv);
+	memory_handler(CLIENT, sock, s_key_enc_len, &ciphertext);
+	memory_handler(CLIENT, sock, session_key_len, &session_key);
+	memory_handler(CLIENT, sock, s_key_enc_len, &s_key_enc);
+
 	ret = RAND_bytes(session_key, session_key_len);
 	pubkey_to_PKEY(&eph_key, key_eph_buf, key_eph_len);
-	ct_len = envelope_encrypt(eph_key, session_key, session_key_len, s_key_enc, s_key_enc_len, iv, ciphertext);	// inizializzare iv e ciphertext			
+	ct_len = envelope_encrypt(eph_key, session_key, session_key_len, s_key_enc, s_key_enc_len, iv, ciphertext);	
 	sign_len_r = key_eph_len + ct_len;
 
+	// SIGN INITIALIZATION
+
+	memory_handler(CLIENT, sock, sign_len_r, &to_sign);
+	memory_handler(CLIENT, sock, sign_len_r, &buf_signed);
+	memory_handler(CLIENT, sock, sizeof(int), &sign_len_byte_r);
+	memory_handler(CLIENT, sock, sizeof(int), &ct_len_byte);
+	memory_handler(CLIENT, sock, sizeof(int), &aad_len_byte);
+	memory_handler(CLIENT, sock, sizeof(int), &s_key_enc_len_byte);
+
+	memcpy(to_sign, ciphertext, ct_len);
+	memcpy(&to_sign[ct_len], key_eph_buf, key_eph_len);
+
+	ret = digital_sign(privK_cl, to_sign, sign_len_r, buf_signed);
+	if(ret < 0){
+		error_handler("Sign error");
+		free_var(CLIENT);
+		close(sock);
+		exit(0);
+	}
+
+	serialize_int(sign_len_r, sign_len_byte_r);
+	serialize_int(ct_len, ct_len_byte);
+	serialize_int(s_key_enc_len, s_key_enc_len_byte);
+
+	// [pay len][sign len][sign][ciph len][ciphertext][len cripted key][cripted key][iv]
+	aad_len = sizeof(int) + sizeof(int) + sign_len_r + sizeof(int) + ct_len + sizeof(int) + s_key_enc_len + EVP_CIPHER_iv_length(EVP_aes_256_cbc());
+	serialize_int(aad_len, aad_len_byte);
+
+	memory_handler(CLIENT, sock, aad_len, &aad);
+	memcpy((unsigned char*)aad, aad_len_byte, sizeof(int));
+	memcpy((unsigned char*)&aad[sizeof(int)], sign_len_byte_r, sizeof(int)); 
+	memcpy((unsigned char*)&aad[sizeof(int) + sizeof(int)], buf_signed, sign_len_r);
+	memcpy((unsigned char*)&aad[sizeof(int) + sizeof(int) + sign_len_r], ct_len_byte, sizeof(int));
+	memcpy((unsigned char*)&aad[sizeof(int) + sizeof(int) + sign_len_r + sizeof(int)], ciphertext, ct_len);
+	memcpy((unsigned char*)&aad[sizeof(int) + sizeof(int) + sign_len_r + sizeof(int) + ct_len], s_key_enc_len_byte, sizeof(int));
+	memcpy((unsigned char*)&aad[sizeof(int) + sizeof(int) + sign_len_r + sizeof(int) + ct_len + sizeof(int)], s_key_enc, s_key_enc_len);
+	memcpy((unsigned char*)&aad[sizeof(int) + sizeof(int) + sign_len_r + sizeof(int) + ct_len + sizeof(int) + s_key_enc_len], iv, EVP_CIPHER_iv_length(EVP_aes_256_cbc()));
+
+	// SYMMETRIC ENCRYPTION
+
+	unsigned char *cipher, *tag, *iv2;
 	
+	memory_handler(CLIENT, sock, session_key_len, &cipher);
+	memory_handler(CLIENT, sock, TAG_LEN, &tag);
+	memory_handler(CLIENT, sock, IV_LEN, &iv2);
+	ct_len = gcm_encrypt(session_key, session_key_len, aad, aad_len, key_eph_buf, iv2, IV_LEN, cipher, tag);
+	if(ct_len < 0){
+		error_handler("Encryption symkey failed");
+		free_var(CLIENT);
+		close(sock);
+		exit(0);
+	}
+
+	// SEND MSG
+
+	resp_msg_len = aad_len + ct_len + TAG_LEN + IV_LEN;
+	memory_handler(CLIENT, sock, resp_msg_len, &resp_msg);
 	
+	memcpy((unsigned char*)resp_msg, aad, aad_len); 
+	memcpy((unsigned char*)&resp_msg[aad_len], cipher, ct_len);
+	memcpy((unsigned char*)&resp_msg[aad_len + ct_len], tag, TAG_LEN);
+	memcpy((unsigned char*)&resp_msg[aad_len + ct_len + TAG_LEN], iv, IV_LEN);
+
+	if((ret = send(sock, (void*)resp_msg, resp_msg_len, 0)) < 0){
+		error_handler("send() failed");
+		free_var(CLIENT);
+		close(sock);
+		exit(0);
+	}
+
 	return 1;	
 }
 
 int s_authenticate(int sock, user **usr_list){	// auth server side - receive nonce + username - send crypto data - receive session key (& other crypto data)
 
+	return 1;
 }
 //	END UTILITY FUNCTIONS
 
