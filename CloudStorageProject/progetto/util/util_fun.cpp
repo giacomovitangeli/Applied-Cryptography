@@ -367,6 +367,37 @@ int certificate_validation(string CA_path, string CA_CRL_path, X509 *sv_cert){
 
 	return 1;
 }
+
+void eph_keys_gen(EVP_PKEY** k_priv, EVP_PKEY** k_pub){
+
+	RSA *rsa = NULL;
+	BIGNUM* big_num = NULL;
+	BIO *bio = NULL;
+	BIO *bio_pub = NULL;
+
+
+	// Generate RSA key
+	big_num = BN_new();
+	BN_set_word(big_num, RSA_F4);
+	rsa = RSA_new();
+	RSA_generate_key_ex(rsa, 2048, big_num, NULL);
+	BN_free(big_num);
+
+
+	// Extract the private key
+	bio = BIO_new(BIO_s_mem());
+	PEM_write_bio_RSAPrivateKey(bio, rsa, NULL, NULL, 0, NULL, NULL);
+	PEM_read_bio_PrivateKey(bio, &(*k_priv), NULL, NULL);
+	BIO_free_all(bio);
+
+
+	// Extract the public key
+	bio_pub = BIO_new(BIO_s_mem());
+	PEM_write_bio_PUBKEY(bio_pub, *k_priv);
+	PEM_read_bio_PUBKEY(bio_pub, &(*k_pub), NULL, NULL);
+	BIO_free_all(bio_pub);
+
+}
 //	END CRYPTO UTILITY FUNCTIONS
 
 //	START UTILITY FUNCTIONS
@@ -587,32 +618,30 @@ void serialize_int(int val, unsigned char *c){
 	c[3] = (val>>24) & 0xFF;
 }
 
-int serialize_certificate(string path, unsigned char *buf){
+unsigned char* serialize_certificate(string path, int *cert_len){
 
-	// Reading cert
-	FILE* cert_fd = fopen(path.c_str(), "r");
-	if(!cert_fd){
-		error_handler("failed to open certificate file");
-		return -1;
-	}
+	// Reading certificate from file
+	FILE* fd_cert = fopen(path.c_str(), "r");
+	if(!fd_cert)
+		return NULL;
 
-	X509* cert = PEM_read_X509(cert_fd, NULL, NULL, NULL);
-	if(!cert){
-		error_handler("failed to read certificate");
-		return -1;
-	}
-	fclose(cert_fd);
+	X509* cert = PEM_read_X509(fd_cert, NULL, NULL, NULL);
+	if(!cert)
+		return NULL;
+	fclose(fd_cert);
 
-	// Memory bio setup
-	BIO *bio = BIO_new(BIO_s_mem());
-	PEM_write_bio_X509(bio, cert); // Write server_cert into bio
+	// Memory bio
+	BIO* bio = BIO_new(BIO_s_mem());
+	PEM_write_bio_X509(bio, cert);
+
 
 	// Serialize the certificate
-	int buf_size = BIO_get_mem_data(bio, &buf);
-	if(buf_size < 0)
-		return -1;
+	unsigned char* buf_cert = NULL;
+	*cert_len = BIO_get_mem_data(bio, &buf_cert);
+	if((*cert_len) < 0)
+		return NULL;
 
-	return 1;
+	return buf_cert;
 }
 
 void deserialize_certificate(X509 **cert, unsigned char* cert_buff, int cert_size){
@@ -642,7 +671,7 @@ void privkey_to_PKEY(EVP_PKEY **priv_key, unsigned char *private_key, int len){
 	BIO_free(mbio);
 }
 
-void serialize_pubkey(EVP_PKEY *public_key, int *pub_key_len, unsigned char **pkey){
+void serialize_pubkey(EVP_PKEY *public_key, unsigned char **pkey){
 
 	BIO *bio = NULL;
 	int key_len = 0;
@@ -651,7 +680,6 @@ void serialize_pubkey(EVP_PKEY *public_key, int *pub_key_len, unsigned char **pk
 	PEM_write_bio_PUBKEY(bio, public_key);
 
 	key_len = BIO_pending(bio);
-	*pub_key_len = key_len;
 
 	*pkey = (unsigned char*)calloc(sizeof(unsigned char) * key_len, sizeof(unsigned char));
 	if(!*pkey){
@@ -971,6 +999,342 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 }
 
 int s_authenticate(int sock, user **usr_list){	// auth server side - receive nonce + username - send crypto data - receive session key (& other crypto data)
+
+	int payload_len, user_len, ret;
+	unsigned char *user, *nonce;
+	unsigned char *payload_len_byte;
+	char *abs_path;
+
+	abs_path = (char*)malloc(MAX_PATH);
+	getcwd(abs_path, MAX_PATH);
+	
+	//	READ PAYLOAD_LEN
+	memory_handler(SERVER, sock, sizeof(int), &payload_len_byte);
+	if((ret = read_byte(sock, (void*)payload_len_byte, sizeof(int))) < 0){
+		error_handler("recv() failed");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	if(ret == 0){
+		error_handler("nothing to read! 1");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	memcpy(&payload_len, payload_len_byte, sizeof(int));
+
+	//	READ USER & NONCE
+	user_len = payload_len - NONCE_LEN;
+
+	memory_handler(SERVER, sock, user_len, &user);
+	memory_handler(SERVER, sock, NONCE_LEN, &nonce);
+
+	if((ret = read_byte(sock, (void*)nonce, NONCE_LEN)) < 0){
+		error_handler("recv() failed");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	if(ret == 0){
+		error_handler("nothing to read! 1");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+
+	if((ret = read_byte(sock, (void*)user, user_len)) < 0){
+		error_handler("recv() failed");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	if(ret == 0){
+		error_handler("nothing to read! 1");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+
+	//	CHECK USERNAME
+	//string curdir = "/server_src/";
+	string username(reinterpret_cast<char*>(user));
+	string dir_name = strcat(abs_path, "/server_src/");
+
+	DIR *dir;
+	struct dirent *en;
+	int check = 0;
+	dir = opendir(dir_name.c_str());
+	if(dir){
+		while((en = readdir(dir)) != NULL){
+			cout << en->d_name << endl;
+			if(!strcmp(en->d_name, username.c_str()))
+				check = 1;	
+		}
+	}
+	closedir(dir);
+	if(check == 0){
+		error_handler("Username not found...");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+
+	//	SEND REPLAY WITH CRYPTO INFO	[pay_len][sign len][sign][eph key len][eph key][cert len][cert]
+	int sign_len, key_len, cert_len;
+	unsigned char *to_sign, *sign_buf, *eph_pub_key, *session_key;
+	unsigned char *sign_len_byte, *key_len_byte, *cert_len_byte;
+	EVP_PKEY *eph_key_priv, *eph_key_pub, *privK_sv;
+
+	//	GETTING PRIV KEY
+	string key_path = strcat(abs_path, "/server_src/cert/Server_CloudStorage_private_key.pem");
+	FILE *pem_fd = fopen(key_path.c_str(), "r");
+	if(!pem_fd){
+		error_handler("Can't open PEM file 999");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	privK_sv = PEM_read_PrivateKey(pem_fd, NULL, NULL, NULL);
+
+	//	GENERATE EPH KEYS
+	eph_keys_gen(&eph_key_priv, &eph_key_pub);
+	if(!eph_key_priv || !eph_key_pub){
+		error_handler("Error generating RSA Eph Keys");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+
+	//	SIGN
+	key_len = EVP_PKEY_size(eph_key_pub);
+
+	memory_handler(SERVER, sock, sizeof(int), &key_len_byte);
+	serialize_int(key_len, key_len_byte);
+
+	memory_handler(SERVER, sock, key_len, &eph_pub_key);
+	sign_len = key_len + NONCE_LEN;
+	serialize_pubkey(eph_key_pub, &eph_pub_key);
+
+	memory_handler(SERVER, sock, sign_len, &to_sign);
+	memory_handler(SERVER, sock, sizeof(int), &sign_len_byte);
+
+	memcpy(to_sign, nonce, NONCE_LEN);
+	memcpy(&to_sign[NONCE_LEN], eph_pub_key, key_len);
+
+	memory_handler(SERVER, sock, sign_len, &sign_buf);
+	ret = digital_sign(privK_sv, to_sign, sign_len, sign_buf);
+	if(ret < 0){
+		error_handler("Sign error");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	serialize_int(sign_len, sign_len_byte);
+
+	//	CERTIFICATE SERIALIZATION
+	string path = strcat(abs_path, "/server_src/cert/Server_CloudStorage_certificate.pem");
+	unsigned char *cert_buf = serialize_certificate(path, &cert_len);
+
+	memory_handler(SERVER, sock, sizeof(int), &cert_len_byte);
+	serialize_int(cert_len, cert_len_byte);
+
+	payload_len = sizeof(int) + sign_len + sizeof(int) + key_len + sizeof(int) + cert_len;
+	serialize_int(payload_len, payload_len_byte);
+
+	int resp_msg_len = sizeof(int) + payload_len;
+	unsigned char *resp_msg;
+	memory_handler(SERVER, sock, resp_msg_len, &resp_msg);
+
+	memcpy((unsigned char*)resp_msg, payload_len_byte, sizeof(int));
+	memcpy((unsigned char*)&resp_msg[sizeof(int)], sign_len_byte, sizeof(int));
+	memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int)], sign_buf, sign_len);
+	memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + sign_len], key_len_byte, sizeof(int));
+	memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + sign_len + sizeof(int)], eph_pub_key, key_len);
+	memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + sign_len + sizeof(int) + key_len], cert_len_byte, sizeof(int));
+	memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + sign_len + sizeof(int) + key_len + sizeof(int)], cert_buf, cert_len);
+
+	//	SEND MSG
+	if((ret = send(sock, (void*)resp_msg, resp_msg_len, 0)) < 0){
+		error_handler("send() failed");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+
+	//	RECEIVE CLIENT CRYPTO DATA	[pay len][sign len][sign][ciph len][ciphertext][len cripted key][cripted key][tag][iv]
+
+	payload_len = 0;
+	sign_len = 0;
+	key_len = 0;
+	int ct_len, key_enc_len;
+	unsigned char *iv, *tag;
+	unsigned char *ciphertext, *sign_to_verify, *sign_check, *key_enc;
+	unsigned char *ct_len_byte, *key_enc_len_byte;
+	EVP_PKEY *pubK_cl;
+
+	//	READ PAYLOAD LEN
+	if((ret = read_byte(sock, (void*)payload_len_byte, sizeof(int))) < 0){
+		error_handler("recv() [rcv_msg] failed");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	if(ret == 0){
+		error_handler("nothing to read! 1");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	memcpy(&payload_len, payload_len_byte, sizeof(int));
+
+	//	READ SIGN_LEN & SIGN			
+	if((ret = read_byte(sock, (void*)sign_len_byte, sizeof(int))) < 0){
+		error_handler("recv() [sign_len_byte] failed");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	if(ret == 0){
+		error_handler("nothing to read! 2");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	memcpy(&sign_len, sign_len_byte, sizeof(int));
+	memory_handler(SERVER, sock, sign_len, &sign_to_verify);
+	if((ret = read_byte(sock, (void*)sign_to_verify, sign_len)) < 0){
+		error_handler("recv() [sign_buf] failed");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	if(ret == 0){
+		error_handler("nothing to read! 3");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+
+	//	READ CIPHERTEXT LEN & CIPHERTEXT
+	memory_handler(SERVER, sock, sizeof(int), &ct_len_byte);
+	if((ret = read_byte(sock, (void*)ct_len_byte, sizeof(int))) < 0){
+		error_handler("recv() [ct_len_byte] failed");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	if(ret == 0){
+		error_handler("nothing to read! 3");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	memcpy(&ct_len, ct_len_byte, sizeof(int));
+	memory_handler(SERVER, sock, ct_len, &ciphertext);
+	if((ret = read_byte(sock, (void*)ciphertext, ct_len)) < 0){
+		error_handler("recv() [ciphertext] failed");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	if(ret == 0){
+		error_handler("nothing to read! 3");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+
+	//	READ ENC KEY
+	memory_handler(SERVER, sock, sizeof(int), &key_enc_len_byte);
+	if((ret = read_byte(sock, (void*)key_enc_len_byte, sizeof(int))) < 0){
+		error_handler("recv() [key_enc_len_byte] failed");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	if(ret == 0){
+		error_handler("nothing to read! 3");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	memcpy(&key_enc_len, key_enc_len_byte, sizeof(int));
+	memory_handler(SERVER, sock, key_enc_len, &key_enc);
+	if((ret = read_byte(sock, (void*)key_enc, key_enc_len)) < 0){
+		error_handler("recv() [key_enc] failed");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	if(ret == 0){
+		error_handler("nothing to read! 3");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+
+	//	READ TAG & IV
+	memory_handler(SERVER, sock, TAG_LEN, &tag);
+	memory_handler(SERVER, sock, IV_LEN, &iv);
+	if((ret = read_byte(sock, (void*)tag, TAG_LEN)) < 0){
+		error_handler("recv() [tag] failed");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	if(ret == 0){
+		error_handler("nothing to read! 3");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	if((ret = read_byte(sock, (void*)iv, IV_LEN)) < 0){
+		error_handler("recv() [iv] failed");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	if(ret == 0){
+		error_handler("nothing to read! 3");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+
+	//	READ CLIENT PUBLIC KEY
+	string key_path2 = "/server_src/pub_key/" + username + "_public_key.pem";
+	FILE *pem_fd2 = fopen(key_path2.c_str(), "r");
+	if(!pem_fd2){
+		error_handler("Can't open PEM file");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	pubK_cl = PEM_read_PrivateKey(pem_fd2, NULL, NULL, NULL);
+
+	//	SIGNATURE VERIFICATION
+	memory_handler(SERVER, sock, ct_len + key_len, &sign_check);
+	memcpy((unsigned char*)sign_check, ciphertext, ct_len);
+	memcpy((unsigned char*)&sign_check[ct_len], eph_pub_key, key_len);
+
+	ret = digital_sign_verify(pubK_cl, sign_check, ct_len + key_len, sign_to_verify, sign_len);
+	if(ret != 1){
+		error_handler("Sign not valid");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+
+	//	DECRYPT SESSION KEY
+	memory_handler(SERVER, sock, ct_len, &session_key);
+	ret = envelope_decrypt(eph_key_priv, ciphertext, ct_len, key_enc, key_enc_len, iv, session_key);
+	if(ret < 0){
+		error_handler("Decrypt session key failed");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
 
 	return 1;
 }

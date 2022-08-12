@@ -9,7 +9,7 @@ int main(){
 	int listner_socket, new_socket, ret, option = 1, k, fdmax;
 	struct sockaddr_in my_addr, client_addr;
 	char *sv_dir = NULL;
-	//user *list = NULL;
+	user *list = NULL;
 
 	fd_set master;
 	fd_set read_set;
@@ -84,6 +84,7 @@ int main(){
 						fdmax = new_socket;
 				}
 				else{ // Serving client request
+					s_authenticate(k, &list); 
 					int ct_len, aad_len, msg_len, cmd;
 					unsigned char *rcv_msg, *plaintext, *ciphertext, *ct_len_byte, *aad_len_byte, *aad, *tag, *iv;//, *user_dir;	
 					unsigned char flag_check = '1';		
