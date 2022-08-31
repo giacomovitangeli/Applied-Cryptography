@@ -621,13 +621,18 @@ void serialize_int(int val, unsigned char *c){
 unsigned char* serialize_certificate(string path, int *cert_len){
 
 	// Reading certificate from file
+	cout << "Cert path to open: " << path.c_str() << endl;
 	FILE* fd_cert = fopen(path.c_str(), "r");
-	if(!fd_cert)
+	if(!fd_cert){
+		cout << "fopen fail" << endl;
 		return NULL;
+	}
 
 	X509* cert = PEM_read_X509(fd_cert, NULL, NULL, NULL);
-	if(!cert)
+	if(!cert){
+		cout << "pem read fail" << endl;
 		return NULL;
+	}
 	fclose(fd_cert);
 
 	// Memory bio
@@ -761,7 +766,7 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 		exit(0);
 	}
 	if(ret == 0){
-		error_handler("nothing to read! 1");
+		error_handler("nothing to read! 10");
 		free_var(CLIENT);
 		close(sock);
 		exit(0);
@@ -806,7 +811,7 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 		exit(0);
 	}
 	if(ret == 0){
-		error_handler("nothing to read! 2");
+		error_handler("nothing to read! 20");
 		free_var(CLIENT);
 		close(sock);
 		exit(0);
@@ -820,7 +825,7 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 		exit(0);
 	}
 	if(ret == 0){
-		error_handler("nothing to read! 3");
+		error_handler("nothing to read! 30");
 		free_var(CLIENT);
 		close(sock);
 		exit(0);
@@ -835,7 +840,7 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 		exit(0);
 	}
 	if(ret == 0){
-		error_handler("nothing to read! 2");
+		error_handler("nothing to read! 21");
 		free_var(CLIENT);
 		close(sock);
 		exit(0);
@@ -849,19 +854,27 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 		exit(0);
 	}
 	if(ret == 0){
-		error_handler("nothing to read! 3");
+		error_handler("nothing to read! 31");
 		free_var(CLIENT);
 		close(sock);
 		exit(0);
 	}
 
 	//	EXTRACT PUBLIC KEY FROM CERT
-	string pem_path = "CA/CA_cert.pem";
-	string crl_path = "CA/CA_revocation_list.pem";
-	string CA_path = CA_path_folder + pem_path;
-	string CA_CRL_path = CA_path_folder + crl_path;
+	char *abs_path;
+	abs_path = (char*)malloc(MAX_PATH);
+	getcwd(abs_path, MAX_PATH);
+
+	string pem_path = strcat(abs_path, "/client_src/CA/CA_cert.pem");
+	getcwd(abs_path, MAX_PATH);
+
+	string crl_path = strcat(abs_path, "/client_src/CA/CA_revocation_list.pem");
+	//string CA_path = CA_path_folder + pem_path;
+
+	cout << "pem path: " << pem_path << endl;
+	//string CA_CRL_path = CA_path_folder + crl_path;
 	deserialize_certificate(&cert, cert_buf, cert_buf_len);
-	ret = certificate_validation(CA_path, CA_CRL_path, cert);
+	ret = certificate_validation(pem_path, crl_path, cert);
 	if(ret != 1){
 		error_handler("Certificate validation failed");
 		free_var(CLIENT);
@@ -1017,7 +1030,7 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 		exit(0);
 	}
 	if(ret == 0){
-		error_handler("nothing to read! 1");
+		error_handler("nothing to read! 10");
 		free_var(SERVER);
 		close(sock);
 		exit(0);
@@ -1037,7 +1050,7 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 		exit(0);
 	}
 	if(ret == 0){
-		error_handler("nothing to read! 1");
+		error_handler("nothing to read! 11");
 		free_var(SERVER);
 		close(sock);
 		exit(0);
@@ -1050,7 +1063,7 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 		exit(0);
 	}
 	if(ret == 0){
-		error_handler("nothing to read! 1");
+		error_handler("nothing to read! 12");
 		free_var(SERVER);
 		close(sock);
 		exit(0);
@@ -1067,7 +1080,7 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 	dir = opendir(dir_name.c_str());
 	if(dir){
 		while((en = readdir(dir)) != NULL){
-			cout << en->d_name << endl;
+			//cout << en->d_name << endl;
 			if(!strcmp(en->d_name, username.c_str()))
 				check = 1;	
 		}
@@ -1087,7 +1100,9 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 	EVP_PKEY *eph_key_priv, *eph_key_pub, *privK_sv;
 
 	//	GETTING PRIV KEY
+	getcwd(abs_path, MAX_PATH);
 	string key_path = strcat(abs_path, "/server_src/cert/Server_CloudStorage_private_key.pem");
+	cout << "PEM Path: " << key_path.c_str() << endl;
 	FILE *pem_fd = fopen(key_path.c_str(), "r");
 	if(!pem_fd){
 		error_handler("Can't open PEM file 999");
@@ -1133,9 +1148,12 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 	serialize_int(sign_len, sign_len_byte);
 
 	//	CERTIFICATE SERIALIZATION
+	getcwd(abs_path, MAX_PATH);
 	string path = strcat(abs_path, "/server_src/cert/Server_CloudStorage_certificate.pem");
 	unsigned char *cert_buf = serialize_certificate(path, &cert_len);
 
+	if(!cert_buf)
+		cout << "cert_buf NULL" << endl;
 	memory_handler(SERVER, sock, sizeof(int), &cert_len_byte);
 	serialize_int(cert_len, cert_len_byte);
 
@@ -1210,7 +1228,7 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 		exit(0);
 	}
 	if(ret == 0){
-		error_handler("nothing to read! 3");
+		error_handler("nothing to read! 32");
 		free_var(SERVER);
 		close(sock);
 		exit(0);
@@ -1225,7 +1243,7 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 		exit(0);
 	}
 	if(ret == 0){
-		error_handler("nothing to read! 3");
+		error_handler("nothing to read! 33");
 		free_var(SERVER);
 		close(sock);
 		exit(0);
@@ -1239,7 +1257,7 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 		exit(0);
 	}
 	if(ret == 0){
-		error_handler("nothing to read! 3");
+		error_handler("nothing to read! 34");
 		free_var(SERVER);
 		close(sock);
 		exit(0);
@@ -1254,7 +1272,7 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 		exit(0);
 	}
 	if(ret == 0){
-		error_handler("nothing to read! 3");
+		error_handler("nothing to read! 35");
 		free_var(SERVER);
 		close(sock);
 		exit(0);
@@ -1268,7 +1286,7 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 		exit(0);
 	}
 	if(ret == 0){
-		error_handler("nothing to read! 3");
+		error_handler("nothing to read! 36");
 		free_var(SERVER);
 		close(sock);
 		exit(0);
@@ -1284,7 +1302,7 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 		exit(0);
 	}
 	if(ret == 0){
-		error_handler("nothing to read! 3");
+		error_handler("nothing to read! 37");
 		free_var(SERVER);
 		close(sock);
 		exit(0);
@@ -1296,7 +1314,7 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 		exit(0);
 	}
 	if(ret == 0){
-		error_handler("nothing to read! 3");
+		error_handler("nothing to read! 38");
 		free_var(SERVER);
 		close(sock);
 		exit(0);
@@ -1306,7 +1324,7 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 	string key_path2 = "/server_src/pub_key/" + username + "_public_key.pem";
 	FILE *pem_fd2 = fopen(key_path2.c_str(), "r");
 	if(!pem_fd2){
-		error_handler("Can't open PEM file");
+		error_handler("Can't open PEM file 222");
 		free_var(SERVER);
 		close(sock);
 		exit(0);
