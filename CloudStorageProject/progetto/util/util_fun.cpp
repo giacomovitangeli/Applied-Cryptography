@@ -835,7 +835,7 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 		exit(0);
 	}
 	
-	//cout << "Key eph: " << key_eph_buf << endl;
+	cout << "Key eph: " << key_eph_buf << endl;
 	if(ret == 0){
 		error_handler("nothing to read! 30");
 		free_var(CLIENT);
@@ -949,10 +949,13 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 	memory_handler(CLIENT, sock, EVP_CIPHER_iv_length(EVP_aes_256_cbc()), &iv);
 	memory_handler(CLIENT, sock, 64, &ciphertext);
 	memory_handler(CLIENT, sock, session_key_len, &session_key);
-	memory_handler(CLIENT, sock, s_key_enc_len, &s_key_enc);
+	//memory_handler(CLIENT, sock, s_key_enc_len, &s_key_enc); // errore
 	
 	ret = RAND_bytes(session_key, session_key_len);
 	pubkey_to_PKEY(&eph_key, key_eph_buf, key_eph_len);
+	PEM_write_PrivateKey(stdout, eph_key, NULL, NULL, NULL, NULL, NULL);
+	s_key_enc_len = EVP_PKEY_size(eph_key);
+	memory_handler(CLIENT, sock, s_key_enc_len, &s_key_enc);
 	ct_len = envelope_encrypt(eph_key, session_key, session_key_len, s_key_enc, s_key_enc_len, iv, ciphertext);	
 	sign_len_r = key_eph_len + ct_len;
 
@@ -1142,22 +1145,21 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 		exit(0);
 	}
 
-	//cout << "eph keys: " << eph_key_priv << "     " << eph_key_pub << endl;
 	//	SIGN
 	key_len = EVP_PKEY_size(eph_key_pub);
 	
 	memory_handler(SERVER, sock, sizeof(int), &key_len_byte);
 	//serialize_int(key_len, key_len_byte);
 
-	memory_handler(SERVER, sock, key_len, &eph_pub_key);
-	sign_len = key_len + NONCE_LEN;
-	serialize_pubkey(eph_key_pub, &eph_pub_key);
-	serialize_int(key_len, key_len_byte);
+	memory_handler(SERVER, sock, 460, &eph_pub_key);
+	int key_len2 = serialize_pubkey(eph_key_pub, &eph_pub_key);	// key_len2 = dimensione chiave in forma unsigned char -- key_len = dimensione chiave in forma EVP
+	sign_len = key_len2 + NONCE_LEN;
+	serialize_int(key_len2, key_len_byte);
 	memory_handler(SERVER, sock, sign_len, &to_sign);
 	memory_handler(SERVER, sock, sizeof(int), &sign_len_byte);
 	//memcpy(nonce , "1234567890123456", NONCE_LEN);
 	memcpy(&to_sign[0], nonce, NONCE_LEN);	//NONCE_LEN
-	memcpy(&to_sign[NONCE_LEN], eph_pub_key, key_len);
+	memcpy(&to_sign[NONCE_LEN], eph_pub_key, key_len2);
 	//cout << "Nonce: " << nonce << endl << "Key eph: " << eph_pub_key << endl;
 	//cout << "to sign: " << endl << to_sign << endl;
 	memory_handler(SERVER, sock, sign_len, &sign_buf);
@@ -1221,7 +1223,7 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 	memory_handler(SERVER, sock, sizeof(int), &cert_len_byte);
 	serialize_int(cert_len, cert_len_byte);
 
-	payload_len = sizeof(int) + sign_len + sizeof(int) + key_len + sizeof(int) + cert_len;
+	payload_len = sizeof(int) + sign_len + sizeof(int) + key_len2 + sizeof(int) + cert_len;
 	cout << "pay len: " << payload_len << endl;
 	serialize_int(payload_len, payload_len_byte);
 
@@ -1233,9 +1235,9 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 	memcpy((unsigned char*)&resp_msg[sizeof(int)], sign_len_byte, sizeof(int));
 	memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int)], sign_buf, sign_len);
 	memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + sign_len], key_len_byte, sizeof(int));
-	memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + sign_len + sizeof(int)], eph_pub_key, key_len);
-	memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + sign_len + sizeof(int) + key_len], cert_len_byte, sizeof(int));
-	memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + sign_len + sizeof(int) + key_len + sizeof(int)], cert_buf, cert_len);
+	memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + sign_len + sizeof(int)], eph_pub_key, key_len2);
+	memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + sign_len + sizeof(int) + key_len2], cert_len_byte, sizeof(int));
+	memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + sign_len + sizeof(int) + key_len2 + sizeof(int)], cert_buf, cert_len);
 
 	//	SEND MSG
 	if((ret = send(sock, (void*)resp_msg, resp_msg_len, 0)) < 0){
@@ -1386,7 +1388,9 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 	}
 
 	//	READ CLIENT PUBLIC KEY
-	string key_path2 = "/server_src/pub_key/" + username + "_public_key.pem";
+	getcwd(abs_path, MAX_PATH);
+	string key_path2_ = "/server_src/pub_key/" + username + "_public_key.pem";
+	string key_path2 = strcat(abs_path, key_path2_.c_str());
 	FILE *pem_fd2 = fopen(key_path2.c_str(), "r");
 	if(!pem_fd2){
 		error_handler("Can't open PEM file 222");
