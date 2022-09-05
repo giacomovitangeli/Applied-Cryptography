@@ -246,15 +246,15 @@ int digital_sign(EVP_PKEY *private_key, unsigned char *to_sign, int to_sign_len,
 	
 	// FREE CONTEXT
 	EVP_MD_CTX_free(ctx);
-
+	cout << "Sign Len: " << sign_len << endl;
 	return sign_len;
 }
 
-int digital_sign_verify(EVP_PKEY *public_key, unsigned char *sign_buf, unsigned int sign_len, unsigned char *to_verify, unsigned int to_verify_len){
+int digital_sign_verify(EVP_PKEY *public_key, unsigned char *sign_buf, int sign_len, unsigned char *to_verify, int to_verify_len){ //unsigned int
 	const EVP_MD* md = EVP_sha256();
 	int ret = -1;
 
-	//cout << "Len 1: " << sign_len << endl << "Len 2: " << to_verify_len << endl;
+	cout << "Sign Len: " << sign_len << endl;
 	// CONTEST CREATION
 	EVP_MD_CTX* ctx;
 	if(!(ctx = EVP_MD_CTX_new())){
@@ -281,7 +281,7 @@ int digital_sign_verify(EVP_PKEY *public_key, unsigned char *sign_buf, unsigned 
 	}
 	// FREE CONTEXT
 	EVP_MD_CTX_free(ctx);
-
+	cout << "Sign verified successfully" << endl;
 	return ret;
 }
 
@@ -365,7 +365,7 @@ int certificate_validation(string CA_path, string CA_CRL_path, X509 *sv_cert){
 	// Verify certificate
 	ret = X509_verify_cert(cert_verify_ctx);
 	if(ret != 1) {
-		cout << "Errore ret: " << ret << endl;
+		//cout << "Errore ret: " << ret << endl;
 		//print_Server_cert_info(sv_cert);
 		cout << X509_verify_cert_error_string(X509_STORE_CTX_get_error(cert_verify_ctx)) << endl;
 		error_handler("X509_verify_cert fails!");
@@ -780,7 +780,7 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 		exit(0);
 	}
 	memcpy(&payload_len, payload_len_byte, sizeof(int));
-	cout << "pay len: " << payload_len << endl;
+	//cout << "pay len: " << payload_len << endl;
 	//	READ SIGN_LEN & SIGN			
 	memory_handler(CLIENT, sock, sizeof(int), &sign_len_byte);
 	if((ret = read_byte(sock, (void*)sign_len_byte, sizeof(int))) < 0){
@@ -797,7 +797,7 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 	}
 	
 	memcpy(&sign_len, sign_len_byte, sizeof(int));
-	cout << "Sign len: " << sign_len << endl;
+	//cout << "Sign len: " << sign_len << endl;
 	memory_handler(CLIENT, sock, sign_len, &sign_buf);
 	if((ret = read_byte(sock, (void*)sign_buf, sign_len)) < 0){
 		error_handler("recv() [sign_buf] failed");
@@ -811,7 +811,7 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 		close(sock);
 		exit(0);
 	}
-	cout << "Sign buf: " << endl << sign_buf << endl;
+	//cout << "Sign buf: " << endl << sign_buf << endl;
 	//	READ KEY_EPH_LEN & KEY_EPH		
 	memory_handler(CLIENT, sock, sizeof(int), &key_eph_len_byte);
 	if((ret = read_byte(sock, (void*)key_eph_len_byte, sizeof(int))) < 0){
@@ -835,7 +835,7 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 		exit(0);
 	}
 	
-	cout << "Key eph: " << key_eph_buf << endl;
+	//cout << "Key eph: " << key_eph_buf << endl;
 	if(ret == 0){
 		error_handler("nothing to read! 30");
 		free_var(CLIENT);
@@ -858,7 +858,7 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 		exit(0);
 	}
 	memcpy(&cert_buf_len, cert_buf_len_byte, sizeof(int));
-	cout << "cert buf len: " << cert_buf_len << endl;
+	//cout << "cert buf len: " << cert_buf_len << endl;
 	memory_handler(CLIENT, sock, cert_buf_len, &cert_buf);
 	if((ret = read_byte(sock, (void*)cert_buf, cert_buf_len)) < 0){
 		error_handler("recv() [cert_buf] failed");
@@ -902,16 +902,16 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 		close(sock);
 		exit(0);
 	}
-	cout << "pub key extracted: " << endl;
-	PEM_write_PUBKEY(stdout, pubK_sv);
+	//cout << "pub key extracted: " << endl;
+	//PEM_write_PUBKEY(stdout, pubK_sv);
 	//	SIGN VERIFICATION	<nonce||key_pub_eph>
 	sign_verify_len = NONCE_LEN + key_eph_len;	//2x
 	memory_handler(CLIENT, sock, sign_verify_len, &sign_verify_buf);
-	memcpy(nonce, "1234567890123456", NONCE_LEN);
+	//memcpy(nonce, "1234567890123456", NONCE_LEN);
 	memcpy(sign_verify_buf, nonce, NONCE_LEN);	//NONCE_LEN
 	memcpy((unsigned char*)&sign_verify_buf[NONCE_LEN], key_eph_buf, key_eph_len);
-	cout << "Sign to verify: " << endl << sign_verify_buf << endl;
-	ret = digital_sign_verify(pubK_sv, sign_buf, (unsigned int)sign_len, sign_verify_buf, (unsigned int)sign_verify_len);
+	//cout << "Sign to verify: " << endl << sign_verify_buf << endl;
+	ret = digital_sign_verify(pubK_sv, sign_buf, (unsigned int)sign_len, sign_verify_buf, (unsigned int)sign_verify_len); //(unsigned int)
 	if(ret != 1){
 		error_handler("Sign not valid 1");
 		free_var(CLIENT);
@@ -929,8 +929,11 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 	EVP_PKEY *eph_key = NULL;
 
 	//	READ PRIV KEY FROM PEM FILE
+	getcwd(abs_path, MAX_PATH);
 	string key_path = "/client_src/keys/" + username + "_private_key.pem";
-	FILE *pem_fd = fopen(key_path.c_str(), "r");
+	string priv_key = strcat(abs_path, key_path.c_str());
+	
+	FILE *pem_fd = fopen(priv_key.c_str(), "r");
 	if(!pem_fd){
 		error_handler("Can't open PEM file");
 		free_var(CLIENT);
@@ -940,13 +943,14 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 	privK_cl = PEM_read_PrivateKey(pem_fd, NULL, NULL, NULL);
 
 	session_key_len =  EVP_CIPHER_key_length(EVP_aes_256_gcm());
-	s_key_enc_len = EVP_PKEY_size(eph_key);
+	
+	//s_key_enc_len = EVP_PKEY_size(eph_key); // errore
 
 	memory_handler(CLIENT, sock, EVP_CIPHER_iv_length(EVP_aes_256_cbc()), &iv);
-	memory_handler(CLIENT, sock, s_key_enc_len, &ciphertext);
+	memory_handler(CLIENT, sock, 64, &ciphertext);
 	memory_handler(CLIENT, sock, session_key_len, &session_key);
 	memory_handler(CLIENT, sock, s_key_enc_len, &s_key_enc);
-
+	
 	ret = RAND_bytes(session_key, session_key_len);
 	pubkey_to_PKEY(&eph_key, key_eph_buf, key_eph_len);
 	ct_len = envelope_encrypt(eph_key, session_key, session_key_len, s_key_enc, s_key_enc_len, iv, ciphertext);	
@@ -1126,8 +1130,8 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 	}
 	privK_sv = PEM_read_PrivateKey(pem_fd, NULL, NULL, NULL);
 	//cout << "priv key extracted: " << endl;
-	cout << "PrivRSAKey: " << endl;
-	PEM_write_PrivateKey(stdout, privK_sv, NULL, NULL, NULL, NULL, NULL);
+	//cout << "PrivRSAKey: " << endl;
+	//PEM_write_PrivateKey(stdout, privK_sv, NULL, NULL, NULL, NULL, NULL);
 	cout << endl;
 	//	GENERATE EPH KEYS
 	eph_keys_gen(&eph_key_priv, &eph_key_pub);
@@ -1138,7 +1142,7 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 		exit(0);
 	}
 
-	cout << "eph keys: " << eph_key_priv << "     " << eph_key_pub << endl;
+	//cout << "eph keys: " << eph_key_priv << "     " << eph_key_pub << endl;
 	//	SIGN
 	key_len = EVP_PKEY_size(eph_key_pub);
 	
@@ -1147,18 +1151,17 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 
 	memory_handler(SERVER, sock, key_len, &eph_pub_key);
 	sign_len = key_len + NONCE_LEN;
-	key_len = serialize_pubkey(eph_key_pub, &eph_pub_key);
+	serialize_pubkey(eph_key_pub, &eph_pub_key);
 	serialize_int(key_len, key_len_byte);
 	memory_handler(SERVER, sock, sign_len, &to_sign);
 	memory_handler(SERVER, sock, sizeof(int), &sign_len_byte);
-	memcpy(nonce , "1234567890123456", NONCE_LEN);
-	memcpy(to_sign, nonce, NONCE_LEN);	//NONCE_LEN
+	//memcpy(nonce , "1234567890123456", NONCE_LEN);
+	memcpy(&to_sign[0], nonce, NONCE_LEN);	//NONCE_LEN
 	memcpy(&to_sign[NONCE_LEN], eph_pub_key, key_len);
-	cout << "Nonce: " << nonce << endl << "Key eph: " << eph_pub_key << endl;
-	cout << "to sign: " << endl << to_sign << endl;
+	//cout << "Nonce: " << nonce << endl << "Key eph: " << eph_pub_key << endl;
+	//cout << "to sign: " << endl << to_sign << endl;
 	memory_handler(SERVER, sock, sign_len, &sign_buf);
 	ret = digital_sign(privK_sv, to_sign, sign_len, sign_buf);	//privK_sv
-	cout << "Sign buf: " << endl << sign_buf << endl;
 	if(ret < 0){
 		error_handler("Sign error");
 		free_var(SERVER);
@@ -1166,14 +1169,14 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 		exit(0);
 	}
 	sign_len = ret;
-	cout << "Sign len: " << sign_len << endl << "Ret: " << ret << endl;
+	//cout << "Sign len: " << sign_len << endl << "Ret: " << ret << endl;
 	serialize_int(sign_len, sign_len_byte);	// ritorno funzione di firma
 
 
 
 	// PROVA VERIFICA FIRMA
 	//	EXTRACT PUBLIC KEY FROM CERT
-	char *abs_path2;
+	/*char *abs_path2;
 	EVP_PKEY *pubK_sv = NULL;
 	abs_path2 = (char*)malloc(MAX_PATH);
 	getcwd(abs_path2, MAX_PATH);
@@ -1198,10 +1201,14 @@ int s_authenticate(int sock, user **usr_list){	// auth server side - receive non
 		close(sock);
 		exit(0);
 	}
-	ret = digital_sign_verify(pubK_sv, sign_buf, sign_len, to_sign, sign_len);
-	if(ret < 0)
-		cout << "schianto" << endl << "ret: " << ret << endl;
-
+	//unsigned char *buf = (unsigned char*)malloc(MAX_PATH), prova[3] = {'a', 'b', 'c'};
+	//int len2 = 0;
+	//len2 = digital_sign(privK_sv, prova, 3, buf);
+	//ret = digital_sign_verify(pubK_sv, buf, len2, prova, 3);
+	//ret = digital_sign_verify(pubK_sv, sign_buf, sign_len, to_sign, key_len + NONCE_LEN);
+	//if(ret < 0)
+	//	cout << "schianto" << endl << "ret: " << ret << endl;
+*/
 	// FINE PROVA
 
 	//	CERTIFICATE SERIALIZATION

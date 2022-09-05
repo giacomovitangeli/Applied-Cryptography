@@ -103,7 +103,7 @@ int gcm_decrypt(unsigned char *, int ,
 int envelope_encrypt(EVP_PKEY*, unsigned char*, int, unsigned char*, int, unsigned char*, unsigned char*);
 int envelope_decrypt(EVP_PKEY*, unsigned char*, int, unsigned char*, int, unsigned char*, unsigned char*);
 int digital_sign(EVP_PKEY*, unsigned char*, int, unsigned char*);
-int digital_sign_verify(EVP_PKEY*, unsigned char*, unsigned int, unsigned char*, unsigned int);
+int digital_sign_verify(EVP_PKEY*, unsigned char*, int, unsigned char*, int);
 int certificate_validation(string, string, X509*);
 void eph_keys_gen(EVP_PKEY**, EVP_PKEY**);
 //	END CRYPTO UTILITY FUNCTIONS DECLARATIONS
