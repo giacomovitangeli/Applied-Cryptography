@@ -103,7 +103,7 @@ int gcm_decrypt(unsigned char *, int ,
 int envelope_encrypt(EVP_PKEY*, unsigned char*, int, unsigned char*, int, unsigned char*, unsigned char*);
 int envelope_decrypt(EVP_PKEY*, unsigned char*, int, unsigned char*, int, unsigned char*, unsigned char*);
 int digital_sign(EVP_PKEY*, unsigned char*, int, unsigned char*);
-int digital_sign_verify(EVP_PKEY*, unsigned char*, int, unsigned char*, int);
+int digital_sign_verify(EVP_PKEY*, unsigned char*, unsigned int, unsigned char*, unsigned int);
 int certificate_validation(string, string, X509*);
 void eph_keys_gen(EVP_PKEY**, EVP_PKEY**);
 //	END CRYPTO UTILITY FUNCTIONS DECLARATIONS
@@ -127,13 +127,15 @@ void split_file(unsigned char*, unsigned char**, unsigned char**);
 
 unsigned char* serialize_certificate(string, int*);
 void deserialize_certificate(X509*, unsigned char*, int);
-void serialize_pubkey(EVP_PKEY*, unsigned char**);
+int serialize_pubkey(EVP_PKEY*, unsigned char**);
 
 void pubkey_to_PKEY(EVP_PKEY**, unsigned char*, int);
 void privkey_to_PKEY(EVP_PKEY**, unsigned char*, int);
 
 int c_authenticate(int, user**);
 int s_authenticate(int, user**);
+
+void print_Server_cert_info(X509*);
 //	END UTILITY FUNCTIONS
 
 
