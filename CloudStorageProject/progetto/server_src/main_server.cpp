@@ -8,7 +8,6 @@ int main(){
 
 	int listner_socket, new_socket, ret, option = 1, k, fdmax;
 	struct sockaddr_in my_addr, client_addr;
-	char *sv_dir = NULL;
 	user *list = NULL;
 
 	fd_set master;
@@ -51,44 +50,73 @@ int main(){
 
 	FD_SET(listner_socket, &master);
 	fdmax = listner_socket;
+
 	len = sizeof(client_addr);
 
 	for(int i = 0; i < 1024; i++)
 		sv_free_buf[i] = 0;
 
-	// PATH VARIABLE
-	sv_dir = (char*)calloc(MAX_PATH+1, sizeof(char));
-	if(!sv_dir){
-		error_handler("malloc() failed");
-		exit(0);
-	}
-	getcwd(sv_dir, MAX_PATH); 
-	//cout << "path2: " << basepath2 << endl;
-	strncat(sv_dir, "/server_src/", strlen("/server_src/"));
-	//strncat((char*)basepath2, (char*)old_file_name, strlen((char*)old_file_name));
-	//cout << "path2 old (complete): " << basepath2 << endl;
 	//	Endless loop - Managing client(s) request(s) - Single process with multiple descriptors 
-
+	unsigned char *session_key = NULL;
 	while(1){
 		read_set = master;
 		select(fdmax + 1, &read_set, NULL, NULL, NULL);
 		for(k = 0; k <= fdmax; k++){ // Scan for ready socket
 			if(FD_ISSET(k, &read_set)){
 				if(k == listner_socket){ // Listner Socket - New connection request
-					if((new_socket = accept(listner_socket, (struct sockaddr*)&client_addr, reinterpret_cast<socklen_t *>(&len))) < 0){
+					if((new_socket = accept(listner_socket, (struct sockaddr*)&client_addr, &len)) < 0){
 						error_handler("accept() failed");
 						exit(0);
 					}
+					
 					FD_SET(new_socket, &master);
 					if(new_socket > fdmax)
 						fdmax = new_socket;
 				}
 				else{ // Serving client request
-					s_authenticate(k, &list); 
 					int ct_len, aad_len, msg_len, cmd;
-					unsigned char *rcv_msg, *plaintext, *ciphertext, *ct_len_byte, *aad_len_byte, *aad, *tag, *iv;//, *user_dir;	
+					unsigned char *rcv_msg, *plaintext, *ciphertext, *ct_len_byte, *aad_len_byte, *aad, *tag, *iv;	
 					unsigned char flag_check = '1';		
-					const char *dirname = "/home/giacomo/Desktop/progetto/server_src/franca";
+					char *dirname, *username;
+					
+					if(!session_key){
+						session_key = (unsigned char*)malloc(EVP_CIPHER_key_length(EVP_aes_256_gcm()));
+						if(!session_key){
+							error_handler("Malloc failed");
+							close(k);
+							free_var(SERVER);
+							exit(0);
+						}
+					}
+					if((ret = is_auth(k, list)) != 1)
+						s_authenticate(k, &list, session_key); 
+					
+					dirname = (char*)malloc(MAX_PATH);
+					if(!dirname){
+						error_handler("Malloc failed");
+						close(k);
+						free_var(SERVER);
+						exit(0);
+					}
+					username = (char*)malloc(11);
+					if(!username){
+						error_handler("Malloc failed");
+							close(k);
+							free_var(SERVER);
+							exit(0);
+					}
+					username = get_user(k, list);
+					if(!username){
+						error_handler("username not found");
+						close(k);
+						free_var(SERVER);
+						exit(0);
+					}
+
+					getcwd(dirname, MAX_PATH);
+					strncat(dirname, "/server_src/", strlen("/server_src/"));
+					strncat(dirname, username, 10);
+					strncat(dirname, "/", strlen("/"));
 
 					cout << "Perforing operation..." << endl;
 					//	READ PAYLOAD_LEN
@@ -199,14 +227,14 @@ int main(){
 					}
 
 					//	DECRYPT CT
-					memory_handler(SERVER, k, ct_len, &plaintext);//ct len + 1
-					ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, key, iv, IV_LEN, plaintext);
+					memory_handler(SERVER, k, ct_len, &plaintext);
+					ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, session_key, iv, IV_LEN, plaintext);
 					if(ret < 0){
 						close(k);
 						free_var(SERVER);
 						exit(0);
 					}
-					
+
 					// to do: check counter (ex nonce)
 					int res_check_command = check_cmd(plaintext, cmd);
 
@@ -232,7 +260,7 @@ int main(){
 							dir = opendir(dirname);
 							if(dir){
 								while((en = readdir(dir)) != NULL){
-									if(!strcmp(en->d_name, ".") || !strcmp(en->d_name, ".."))
+									if(!strncmp(en->d_name, ".", strlen(".")) || !strncmp(en->d_name, "..", strlen("..")))
 										continue;
 							
 									//	calculate dim for buffer
@@ -258,7 +286,7 @@ int main(){
 							if(dir){
 								buf = (unsigned char*)malloc(dim+1);
 								while((en = readdir(dir)) != NULL){
-									if(!strcmp(en->d_name, ".") || !strcmp(en->d_name, ".."))
+									if(!strncmp(en->d_name, ".", strlen(".")) || !strncmp(en->d_name, "..", strlen("..")))
 										continue;
 									
 									//	copy file names into buf
@@ -319,7 +347,7 @@ replay_ls:
 							//	SERIALIZATION
 
 							//	AAD SERIALIZATION
-							aad_len_ls = 2 + NONCE_LEN;	//opcode + lunghezza nonce + flag
+							aad_len_ls = 2 + NONCE_LEN;
 							memory_handler(SERVER, k, aad_len_ls, &aad_ls);
 							memory_handler(SERVER, k, sizeof(int), &aad_len_byte_ls);
 							
@@ -329,7 +357,7 @@ replay_ls:
 							memcpy(&aad_ls[17], &flag, sizeof(unsigned char));
 
 							//	CIPHERTEXT LEN SERIALIZATION
-							ct_len_ls = gcm_encrypt(plaintext_ls, strlen((char*)plaintext_ls), aad_ls, aad_len_ls, key, iv_ls, IV_LEN, ciphertext_ls, tag_ls);
+							ct_len_ls = gcm_encrypt(plaintext_ls, strlen((char*)plaintext_ls), aad_ls, aad_len_ls, session_key, iv_ls, IV_LEN, ciphertext_ls, tag_ls);
 							if(ct_len_ls <= 0){ 
 								error_handler("encrypt() failed");
 								close(k);
@@ -375,7 +403,6 @@ replay_ls:
 
 							int file_size;					
 							unsigned char flag = flag_check;
-							string basepath = "/home/giacomo/Desktop/progetto/server_src/franca/";
 							char *fullpath;
 
 							fullpath = (char*)calloc(MAX_PATH, sizeof(char));
@@ -385,9 +412,9 @@ replay_ls:
 								free_var(SERVER);
 								exit(0);
 							}
-							strncpy(fullpath, basepath.c_str(), basepath.size());
+							strncpy(fullpath, dirname, strlen(dirname));
 							strncat(fullpath, (char*)plaintext, strlen((char*)plaintext));
-							cout << "Path: " << fullpath << endl;
+
 							if(flag == '0'){	// path traversal
 								memory_handler(SERVER, k, 25, &plaintext_up);
 								memory_handler(SERVER, k, 25, &ciphertext_up);
@@ -407,8 +434,6 @@ replay_ls:
 								}
 							}
 							memcpy(&file_size, &aad[17], sizeof(int));
-							cout << "File Name: " << plaintext << endl;
-							cout << "Size (bytes): " << file_size << endl;
 							if(file_size > 4294967296)
 								flag = '0';
 							
@@ -439,7 +464,7 @@ replay_ls:
 							//	SERIALIZATION
 
 							//	AAD SERIALIZATION
-							aad_len_up = 2 + NONCE_LEN;	//opcode + lunghezza nonce -- opcode = unsigned char
+							aad_len_up = 2 + NONCE_LEN;
 							memory_handler(SERVER, k, aad_len_up, &aad_up);
 							memory_handler(SERVER, k, sizeof(int), &aad_len_byte_up);
 
@@ -449,7 +474,7 @@ replay_ls:
 							memcpy(&aad_up[17], &flag, sizeof(unsigned char));
 
 							//	CIPHERTEXT LEN SERIALIZATION
-							ct_len_up = gcm_encrypt(plaintext_up, strlen((char*)plaintext_up), aad_up, aad_len_up, key, iv_up, IV_LEN, ciphertext_up, tag_up);
+							ct_len_up = gcm_encrypt(plaintext_up, strlen((char*)plaintext_up), aad_up, aad_len_up, session_key, iv_up, IV_LEN, ciphertext_up, tag_up);
 							if(ct_len_up <= 0){ 
 								error_handler("encrypt() failed");
 								close(k);
@@ -493,7 +518,7 @@ replay_ls:
 							//	RECEIVING CHUNKS
 				
 							unsigned char *chunk_buf;
-							int chunk_num;
+							int chunk_num, size_res;
 
 							if(file_size % CHUNK != 0)
 								chunk_num = (file_size / CHUNK) + 1;
@@ -501,7 +526,7 @@ replay_ls:
 								chunk_num = file_size / CHUNK;
 
 							cout << "Chunk num: " << chunk_num << endl;
-
+							size_res = file_size;
 							FILE *new_file;
 							new_file = fopen(fullpath, "ab");
 							if(!new_file){
@@ -587,8 +612,7 @@ replay_ls:
 									free_var(SERVER);
 									exit(0);
 								}
-								flag = aad_up[17];
-								cout << "Flag: " << flag << endl;			
+								flag = aad_up[17];			
 								if(flag != '1' && i == chunk_num - 1){
 									error_handler("Unexpected error. Waiting last chunk but flag is not '1'. Aborting operation...");
 									close(k);
@@ -683,8 +707,8 @@ replay_ls:
 								}
 
 								//	DECRYPT CT
-								memory_handler(SERVER, k, ct_len_up, &chunk_buf);//ct len + 1
-								ret = gcm_decrypt(ciphertext_up, ct_len_up, aad_up, aad_len_up, tag_up, key, iv_up, IV_LEN, chunk_buf);
+								memory_handler(SERVER, k, ct_len_up, &chunk_buf);
+								ret = gcm_decrypt(ciphertext_up, ct_len_up, aad_up, aad_len_up, tag_up, session_key, iv_up, IV_LEN, chunk_buf);
 								if(ret < 0){
 									close(k);
 									fclose(new_file);
@@ -693,18 +717,31 @@ replay_ls:
 									free_var(SERVER);
 									exit(0);
 								}
-							
+
 								// WRITE BYTES TO FILE
-								if((ret = fprintf(new_file, "%s", chunk_buf/*, CHUNK*/)) < 0){
-									close(k);
-									fclose(new_file);
-									remove(fullpath);
-									free(fullpath);
-									free_var(SERVER);
-									exit(0);
+								if(i == chunk_num - 1){ // last chunk, might be < 1MB
+									if((ret = fwrite(chunk_buf, 1, size_res, new_file)) < 0){
+										close(k);
+										fclose(new_file);
+										remove(fullpath);
+										free(fullpath);
+										free_var(SERVER);
+										exit(0);
+									}
+								}
+								else{
+									if((ret = fwrite(chunk_buf, 1, CHUNK, new_file)) < 0){
+										close(k);
+										fclose(new_file);
+										remove(fullpath);
+										free(fullpath);
+										free_var(SERVER);
+										exit(0);
+									}
 								}
 								cout << "received chunk #" << i << endl;
 								free_var(SERVER);
+								size_res -= CHUNK;
 							}
 							fclose(new_file);
 							cout << "Upload ended successfully" << endl;
@@ -741,7 +778,7 @@ replay_ls:
 							//	SERIALIZATION
 
 							//	AAD SERIALIZATION
-							aad_len_up = 2 + NONCE_LEN;	//opcode + lunghezza nonce + flag
+							aad_len_up = 2 + NONCE_LEN;	
 							memory_handler(SERVER, k, aad_len_up, &aad_up);
 							memory_handler(SERVER, k, sizeof(int), &aad_len_byte_up);
 
@@ -751,7 +788,7 @@ replay_ls:
 							memcpy(&aad_up[17], &flag, sizeof(unsigned char));
 
 							//	CIPHERTEXT LEN SERIALIZATION
-							ct_len_up = gcm_encrypt(plaintext_up, strlen((char*)plaintext_up), aad_up, aad_len_up, key, iv_up, IV_LEN, ciphertext_up, tag_up);
+							ct_len_up = gcm_encrypt(plaintext_up, strlen((char*)plaintext_up), aad_up, aad_len_up, session_key, iv_up, IV_LEN, ciphertext_up, tag_up);
 							if(ct_len_up <= 0){ 
 								error_handler("encrypt() failed");
 								close(k);
@@ -795,7 +832,6 @@ replay_ls:
 
 							int file_size;					
 							unsigned char flag = flag_check;
-							string basepath = "/home/giacomo/Desktop/progetto/server_src/franca/";
 							char *fullpath;
 
 							struct stat *s_buf;
@@ -807,9 +843,8 @@ replay_ls:
 								free_var(SERVER);
 								exit(0);
 							}
-							strncpy(fullpath, basepath.c_str(), basepath.size());
+							strncpy(fullpath, dirname, strlen(dirname));
 							strncat(fullpath, (char*)plaintext, strlen((char*)plaintext));
-							//cout << "Path: " << fullpath << endl;
 
 							if(flag == '0'){	// path traversal
 								memory_handler(SERVER, k, 25, &plaintext_dl);
@@ -884,7 +919,7 @@ replay_dl:
 							//	SERIALIZATION
 
 							//	AAD SERIALIZATION
-							aad_len_dl = 2 + NONCE_LEN + sizeof(int);	//opcode + flag + lunghezza nonce + file size 
+							aad_len_dl = 2 + NONCE_LEN + sizeof(int);
 							memory_handler(SERVER, k, aad_len_dl, &aad_dl);
 							memory_handler(SERVER, k, sizeof(int), &aad_len_byte_dl);
 
@@ -895,7 +930,7 @@ replay_dl:
 							memcpy(&aad_dl[18], &file_size, sizeof(int));
 
 							//	CIPHERTEXT LEN SERIALIZATION
-							ct_len_dl = gcm_encrypt(plaintext_dl, strlen((char*)plaintext_dl), aad_dl, aad_len_dl, key, iv_dl, IV_LEN, ciphertext_dl, tag_dl);
+							ct_len_dl = gcm_encrypt(plaintext_dl, strlen((char*)plaintext_dl), aad_dl, aad_len_dl, session_key, iv_dl, IV_LEN, ciphertext_dl, tag_dl);
 							if(ct_len_dl <= 0){ 
 								error_handler("encrypt() failed");
 								close(k);
@@ -966,8 +1001,14 @@ replay_dl:
 							if(file_size > CHUNK){
 								cout << "File greater than 1Mb - Proceding to send chunks" << endl;
 								for(int i = 0; i < file_size - CHUNK && file_size > CHUNK; i += CHUNK){	// If file_size is greater than 1 chunk (1mb) then send the file divided in chunk but not the last
-									memory_handler(SERVER, k, CHUNK, &plaintext_dl);
-									memory_handler(SERVER, k, CHUNK, &ciphertext_dl);
+									plaintext_dl = (unsigned char*)malloc(CHUNK);
+									ciphertext_dl = (unsigned char*)malloc(CHUNK);
+									if(!plaintext_dl || !ciphertext_dl){
+										error_handler("malloc() failed");
+										free_var(SERVER);
+										close(k);
+										exit(0);
+									}
 									memcpy(plaintext_dl, &file_buffer[i], CHUNK);
 
 									//	MALLOC & RAND VARIABLES
@@ -1000,7 +1041,7 @@ replay_dl:
 									//	SERIALIZATION
 
 									//	AAD SERIALIZATION
-									aad_len_dl = 2 + NONCE_LEN;	//opcode + flag + lunghezza nonce + file size 
+									aad_len_dl = 2 + NONCE_LEN;
 									memory_handler(SERVER, k, aad_len_dl, &aad_dl);
 									memory_handler(SERVER, k, sizeof(int), &aad_len_byte_dl);
 
@@ -1010,7 +1051,7 @@ replay_dl:
 									memcpy(&aad_dl[17], &flag, sizeof(unsigned char));
 
 									//	CIPHERTEXT LEN SERIALIZATION
-									ct_len_dl = gcm_encrypt(plaintext_dl, strlen((char*)plaintext_dl), aad_dl, aad_len_dl, key, iv_dl, IV_LEN, ciphertext_dl, tag_dl);
+									ct_len_dl = gcm_encrypt(plaintext_dl, CHUNK, aad_dl, aad_len_dl, session_key, iv_dl, IV_LEN, ciphertext_dl, tag_dl);
 									if(ct_len_dl <= 0){ 
 										error_handler("encrypt() failed");
 										close(k);
@@ -1050,11 +1091,12 @@ replay_dl:
 									}
 									cout << "Sent chunk #" << i/CHUNK << endl;
 									size_res -= CHUNK;
-									free_var(SERVER);
+									free(plaintext_dl);
+									free(ciphertext_dl);
 								}
 							}
 							// send last chunk or the single chunk composing the file
-							cout << "Sending last chunk" << endl << "size res: " << size_res << endl;
+							cout << "Sending last chunk" << endl;
 							memory_handler(SERVER, k, size_res, &plaintext_dl);
 							memory_handler(SERVER, k, size_res, &ciphertext_dl);
 
@@ -1090,7 +1132,7 @@ replay_dl:
 							//	SERIALIZATION
 
 							//	AAD SERIALIZATION
-							aad_len_dl = 2 + NONCE_LEN;	//opcode + flag + lunghezza nonce + file size 
+							aad_len_dl = 2 + NONCE_LEN; 
 							memory_handler(SERVER, k, aad_len_dl, &aad_dl);
 							memory_handler(SERVER, k, sizeof(int), &aad_len_byte_dl);
 
@@ -1100,7 +1142,7 @@ replay_dl:
 							memcpy(&aad_dl[17], &flag, sizeof(unsigned char));
 
 							//	CIPHERTEXT LEN SERIALIZATION
-							ct_len_dl = gcm_encrypt(plaintext_dl, strlen((char*)plaintext_dl), aad_dl, aad_len_dl, key, iv_dl, IV_LEN, ciphertext_dl, tag_dl);
+							ct_len_dl = gcm_encrypt(plaintext_dl, strlen((char*)plaintext_dl), aad_dl, aad_len_dl, session_key, iv_dl, IV_LEN, ciphertext_dl, tag_dl);
 							if(ct_len_dl <= 0){ 
 								error_handler("encrypt() failed");
 								close(k);
@@ -1140,7 +1182,7 @@ replay_dl:
 							free_var(SERVER);
 							free(fullpath);
 							free(file_buffer);
-							cout << "Download compleated." << endl;
+							cout << "Download completed." << endl;
 							break;
 						}
 						case 5:{	// mv
@@ -1150,7 +1192,6 @@ replay_dl:
 							DIR *dir;
 							struct dirent *en;
 							char *old_file_name, *new_file_name; 
-							//unsigned char *basepath2;
 							unsigned char flag = flag_check;
 
 							old_file_name = (char*)malloc(MAX_FILE_NAME);
@@ -1165,7 +1206,6 @@ replay_dl:
 								free_var(SERVER);
 								exit(0);
 							}
-							//memory_handler(SERVER, k, MAX_PATH-1, &basepath2);
 
 							if(flag == '1'){
 									memory_handler(SERVER, k, 1, &plaintext_mv);
@@ -1177,22 +1217,13 @@ replay_dl:
 								memory_handler(SERVER, k, 25, &ciphertext_mv);
 								strncpy((char*)plaintext_mv, "Warning: path traversing", 25);
 							}
-							strcpy(old_file_name, strtok((char*)plaintext, "|"));
-							strcpy(new_file_name, strtok(NULL, "|"));
+							strncpy(old_file_name, strtok((char*)plaintext, "|"), MAX_FILE_NAME);
+							strncpy(new_file_name, strtok(NULL, "|"), MAX_FILE_NAME);
 
-							cout << "file old: " << old_file_name << " len: " << strlen(old_file_name) << endl << "file new: " << new_file_name << " len: " << strlen(new_file_name) << endl;
-							/*getcwd((char*)basepath2, MAX_PATH); 
-							cout << "path2: " << basepath2 << endl;
-							strncat((char*)basepath2, "/server_src/", strlen("/server_src/"));
-							strncat((char*)basepath2, (char*)old_file_name, strlen((char*)old_file_name));
-							cout << "path2 old (complete): " << basepath2 << endl;*/
 							dir = opendir(dirname);
 			
 							
 							if(dir){
-								//string basepath = "/Users/asterix/Documents/University/UniPi/AppliedCryptography/Project/AC-Project/CloudStorageProject/franca/";
-								string basepath = "/home/giacomo/Desktop/progetto/server_src/franca/";
-								
 								char *fullpath_old, *fullpath_new;
 								fullpath_old = (char*)malloc(MAX_PATH);
 								if(!fullpath_old){
@@ -1207,14 +1238,13 @@ replay_dl:
 									exit(0);
 								}
 
-								strncpy(fullpath_old, basepath.c_str(), basepath.size() + 1);
+								strncpy(fullpath_old, dirname, strlen(dirname));
 								strncat(fullpath_old, old_file_name, strlen(old_file_name));				
-								strncpy(fullpath_new, basepath.c_str(), basepath.size() + 1);
+								strncpy(fullpath_new, dirname, strlen(dirname));
 								strncat(fullpath_new, new_file_name, strlen(new_file_name));
-								cout << "path old: " << fullpath_old << endl << "path new: " << fullpath_new << endl;
 				
 								while((en = readdir(dir)) != NULL){
-									if(!strcmp(en->d_name, ".") || !strcmp(en->d_name, ".."))
+									if(!strncmp(en->d_name, ".", strlen(".")) || !strncmp(en->d_name, "..", strlen("..")))
 										continue;
 
 									if(!strncmp(old_file_name, en->d_name, strlen(en->d_name))){ 
@@ -1254,7 +1284,7 @@ replay_dl:
 							   	// SERIALIZATION
 
 							   	// AAD SERIALIZATION
-							   	aad_len_mv = 2 + NONCE_LEN; //opcode + flag + lunghezza nonce 
+							   	aad_len_mv = 2 + NONCE_LEN;
 							   	memory_handler(SERVER, k, aad_len_mv, &aad_mv);
 							   	memory_handler(SERVER, k, sizeof(int), &aad_len_byte_mv);
 
@@ -1264,7 +1294,7 @@ replay_dl:
 								memcpy(&aad_mv[17], &flag, sizeof(unsigned char));
 
 								// CIPHERTEXT LEN SERIALIZATION
-								ct_len_mv = gcm_encrypt(plaintext_mv, 1, aad_mv, aad_len_mv, key, iv_mv, IV_LEN, ciphertext_mv, tag_mv);
+								ct_len_mv = gcm_encrypt(plaintext_mv, 1, aad_mv, aad_len_mv, session_key, iv_mv, IV_LEN, ciphertext_mv, tag_mv);
 							   	if(ct_len_mv <= 0){
 							       		error_handler("encrypt() failed");
 							       		close(k);
@@ -1315,14 +1345,11 @@ replay_dl:
 
 							cout << "Request for deleting: " << plaintext << endl;
 						    	struct dirent *en;
-						    	//unsigned char *basepath2;
 							unsigned char flag = flag_check;
 							DIR *dir;
 
 							dir = opendir(dirname);
 							if(dir){
-								//string basepath = "/home/giacomo/GitHub/Applied-Cryptography/CloudStorageProject/progetto/server_src/franca/";
-								string basepath = "/home/giacomo/Desktop/progetto/server_src/franca/";
 								char *fullpath;
 
 								if(flag == '1'){
@@ -1336,11 +1363,6 @@ replay_dl:
 									strncpy((char*)plaintext_rm, "Warning: path traversing", 25);
 									goto replay_rm;
 								}
-								//memory_handler(SERVER, k, MAX_PATH-1, &basepath2);
-								/*getcwd((char*)basepath2, MAX_PATH); 
-								cout << "path2: " << basepath2 << endl;
-								strncat((char*)basepath2, "/server_src/", strlen("/server_src/"));
-								strncat((char*)basepath2, (char*)plaintext, strlen((char*)plaintext));*/
 								fullpath = (char*)malloc(MAX_PATH);
 								if(!fullpath){
 									error_handler("malloc failed");
@@ -1348,11 +1370,11 @@ replay_dl:
 									free_var(SERVER);
 									exit(0);
 								}
-								strncpy(fullpath, basepath.c_str(), basepath.size() + 1);
+								strncpy(fullpath, dirname, strlen(dirname));
 								strncat(fullpath, (char*)plaintext, strlen((char*)plaintext) + 1);
 
 								while((en = readdir(dir)) != NULL){
-									if(!strcmp(en->d_name, ".") || !strcmp(en->d_name, ".."))
+									if(!strncmp(en->d_name, ".", strlen(".")) || !strncmp(en->d_name, "..", strlen("..")))
 										continue;
 
 									if(!strncmp((char*)plaintext, en->d_name, strlen(en->d_name))){
@@ -1395,7 +1417,7 @@ replay_rm:
 						        	// SERIALIZATION
 
 						        	// AAD SERIALIZATION
-								aad_len_rm = 2 + NONCE_LEN; //opcode + lunghezza nonce + flag
+								aad_len_rm = 2 + NONCE_LEN;
 								memory_handler(SERVER, k, aad_len_rm, &aad_rm);
 								memory_handler(SERVER, k, sizeof(int), &aad_len_byte_rm);
 
@@ -1405,7 +1427,7 @@ replay_rm:
 								memcpy(&aad_rm[17], &flag, sizeof(unsigned char));
 
 						        	// CIPHERTEXT LEN SERIALIZATION
-								ct_len_rm = gcm_encrypt(plaintext_rm, 1, aad_rm, aad_len_rm, key, iv_rm, IV_LEN, ciphertext_rm, tag_rm);
+								ct_len_rm = gcm_encrypt(plaintext_rm, 1, aad_rm, aad_len_rm, session_key, iv_rm, IV_LEN, ciphertext_rm, tag_rm);
 								if(ct_len_rm <= 0){
 									error_handler("encrypt() failed");
 									close(k);
@@ -1456,7 +1478,89 @@ replay_rm:
 							break;
 						}
 						case 7:{	// logout
-					
+							unsigned char *resp_msg_lo = NULL, *opcode_lo = NULL, *nonce_lo = NULL, *ciphertext_lo = NULL, *plaintext_lo = NULL, *ct_len_byte_lo = NULL;
+							unsigned char *aad_len_byte_lo = NULL, *aad_lo = NULL, *tag_lo = NULL, *iv_lo = NULL, *payload_len_byte_lo = NULL;
+							int ct_len_lo, aad_len_lo, msg_len_lo, rc_lo, payload_len_lo;
+							
+							//	MALLOC & RAND VARIABLES
+							memory_handler(SERVER, k, 1, &plaintext_lo);
+							memory_handler(SERVER, k, 1, &ciphertext_lo);
+							memory_handler(SERVER, k, NONCE_LEN, &nonce_lo);
+							memory_handler(SERVER, k, TAG_LEN, &tag_lo);
+							memory_handler(SERVER, k, 1, &opcode_lo);
+							memory_handler(SERVER, k, IV_LEN, &iv_lo);
+
+							rc_lo = RAND_bytes(nonce_lo, NONCE_LEN);
+							if(rc_lo != 1){
+								error_handler("nonce generation failed");
+								close(k);
+								free_var(SERVER);
+								exit(0);
+							}
+
+							rc_lo = RAND_bytes(iv, IV_LEN);
+							if(rc_lo != 1){
+								error_handler("iv generation failed");
+								close(k);
+								free_var(SERVER);
+								exit(0);
+							}
+
+							opcode_lo[0] = '7';
+
+							//	SERIALIZATION
+
+							//	AAD SERIALIZATION
+							aad_len_lo = 1 + NONCE_LEN;
+							memory_handler(SERVER, k, aad_len_lo, &aad_lo);
+							memory_handler(SERVER, k, sizeof(int), &aad_len_byte_lo);
+							
+							serialize_int(aad_len_lo, aad_len_byte_lo);
+							memcpy(aad_lo, opcode_lo, sizeof(unsigned char));
+							memcpy(&aad_lo[1], nonce_lo, NONCE_LEN);
+							
+							//	CIPHERTEXT LEN SERIALIZATION
+							ct_len_lo = gcm_encrypt(plaintext_lo, 1, aad_lo, aad_len_lo, session_key, iv_lo, IV_LEN, ciphertext_lo, tag_lo);
+							if(ct_len_lo <= 0){ 
+								error_handler("encrypt() failed");
+								close(k);
+								free_var(SERVER);
+								exit(0);
+							}
+							memory_handler(SERVER, k, sizeof(int), &ct_len_byte_lo);
+							serialize_int(ct_len_lo, ct_len_byte_lo);
+
+							//	PAYLOAD LEN SERIALIZATION
+							payload_len_lo = sizeof(int) + aad_len_lo + sizeof(int) + ct_len_lo + TAG_LEN + IV_LEN;
+							memory_handler(SERVER, k, sizeof(int), &payload_len_byte_lo);
+							
+							serialize_int(payload_len_lo, payload_len_byte_lo);
+
+							//	BUILD MESSAGE (resp_msg)
+							msg_len_lo = sizeof(int) + sizeof(int) + aad_len_lo + sizeof(int) + ct_len_lo + TAG_LEN + IV_LEN;
+							memory_handler(SERVER, k, msg_len_lo, &resp_msg_lo);
+
+							memcpy(resp_msg_lo, payload_len_byte_lo, sizeof(int));
+							memcpy((unsigned char*)&resp_msg_lo[sizeof(int)], aad_len_byte_lo, sizeof(int));
+							memcpy((unsigned char*)&resp_msg_lo[sizeof(int) + sizeof(int)], aad_lo, aad_len_lo);
+							memcpy((unsigned char*)&resp_msg_lo[sizeof(int) + sizeof(int) + aad_len_lo], ct_len_byte_lo, sizeof(int));
+							memcpy((unsigned char*)&resp_msg_lo[sizeof(int) + sizeof(int) + aad_len_lo + sizeof(int)], ciphertext_lo, ct_len_lo);
+							memcpy((unsigned char*)&resp_msg_lo[sizeof(int) + sizeof(int) + aad_len_lo + sizeof(int) + ct_len_lo], tag_lo, TAG_LEN);
+							memcpy((unsigned char*)&resp_msg_lo[sizeof(int) + sizeof(int) + aad_len_lo + sizeof(int) + ct_len_lo + TAG_LEN], iv_lo, IV_LEN);
+
+							//	SEND PACKET
+							if((ret = send(k, (void*)resp_msg_lo, msg_len_lo, 0)) < 0){
+					    			error_handler("send() failed");
+								close(k);
+								free_var(SERVER);
+								exit(0);
+							}
+							// eliminare client da lista utenti
+							logout(k, &list);
+							memset(session_key, '\0', 32);
+							free(session_key);
+							free_var(SERVER);
+							close(k);
 							break;
 						}
 						default:{
@@ -1464,7 +1568,6 @@ replay_rm:
 							break;
 						}
 					}
-					free(sv_dir);
                 		}
             		}
 		}

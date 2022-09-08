@@ -113,7 +113,7 @@ void eph_keys_gen(EVP_PKEY**, EVP_PKEY**);
 void print_man();
 
 int check_cmd(unsigned char*, int);
-int whitelisting_cmd(string);
+int blacklisting_cmd(string);
 int get_cmd(char*);
 
 void serialize_int(int, unsigned char*);
@@ -133,9 +133,14 @@ void pubkey_to_PKEY(EVP_PKEY**, unsigned char*, int);
 void privkey_to_PKEY(EVP_PKEY**, unsigned char*, int);
 
 int c_authenticate(int, user**);
-int s_authenticate(int, user**);
+int s_authenticate(int, user**, unsigned char*);
+
+int is_auth(int, user*);
+char* get_user(int, user*);
+void logout(int, user**);
 
 void print_Server_cert_info(X509*);
+void delete_key(unsigned char*, int);
 //	END UTILITY FUNCTIONS
 
 

@@ -10,8 +10,16 @@ int main(){
 	unsigned char *command = NULL, *command_copy = NULL, *path1 = NULL, *path2 = NULL, *file1 = NULL, *file2 = NULL;
 	struct sockaddr_in sv_addr;
 	user *this_user;
+	char *cl_dir = NULL;
 
-	const char cl_dir[] = "/home/giacomo/Desktop/progetto/client_src/";
+	cl_dir = (char*)malloc(MAX_PATH);
+	if(!cl_dir){
+		error_handler("malloc failed");
+		exit(0);
+	}
+	getcwd(cl_dir, MAX_PATH);
+	strncat(cl_dir, "/client_src/", strlen("/client_src/"));
+	
 	//	Cleanup and initialization	 
 	memset(&sv_addr, 0, sizeof(sv_addr));
 	sv_addr.sin_family = AF_INET;
@@ -40,7 +48,20 @@ int main(){
 	print_man();
 
 	// AUTH PHASE
-	while((ret = c_authenticate(socket_d, &this_user)) < 0)
+	this_user = new user;
+	this_user->session_key = (unsigned char*)malloc(EVP_CIPHER_key_length(EVP_aes_256_gcm()));
+	if(!this_user->session_key){
+		error_handler("Malloc failed");
+		close(socket_d);
+		free_var(CLIENT);
+		exit(0);
+	}
+	if((ret = c_authenticate(socket_d, &this_user)) < 0){
+		error_handler("authentication failed");
+		close(socket_d);
+		exit(0);
+	}
+
 	// Endless loop - Managing entire session 
 
 	while(1) {
@@ -64,23 +85,17 @@ int main(){
 			memory_handler(CLIENT, socket_d, 16, &file2);
 			split_file(command_copy, &file1, &file2);
 			if(file1){
-				//cout << "file1: " << file1 << " len: " << strlen((char*)file1) << endl;
 				strncpy((char*)path1, cl_dir, strlen(cl_dir));
 				path1 = (unsigned char*)strncat((char*)path1, (char*)file1, strlen((char*)file1));
-				//cout << "path1: " << path1 << endl;
 			}
-			//if(file2)
-				//cout << "file2: " << file2 << endl;
 		}
 		else if(cmd == 3 || cmd == 4 || cmd == 6){
 			memory_handler(CLIENT, socket_d, 64, &path1);
 			memory_handler(CLIENT, socket_d, 16, &file1);
 			split_file(command_copy, &file1, &file2);
 			if(file1){
-				//cout << "file1: " << file1 << " len: " << strlen((char*)file1) << endl;
 				strncpy((char*)path1, cl_dir, strlen(cl_dir));
 				path1 = (unsigned char*)strncat((char*)path1, (char*)file1, strlen((char*)file1));
-				//cout << "path1: " << path1 << endl;
 			}
 		}
 
@@ -122,7 +137,7 @@ int main(){
 				//	SERIALIZATION
 
 				//	AAD SERIALIZATION
-				aad_len = 1 + NONCE_LEN;	//opcode + lunghezza nonce 
+				aad_len = 1 + NONCE_LEN;
 				memory_handler(CLIENT, socket_d, aad_len, &aad);			
 				memory_handler(CLIENT, socket_d, sizeof(int), &aad_len_byte); 
 				serialize_int(aad_len, aad_len_byte);
@@ -131,7 +146,7 @@ int main(){
 
 				//	CIPHERTEXT LEN SERIALIZATION
 				plaintext[0] = DUMMY_BYTE;
-				ct_len = gcm_encrypt(plaintext, sizeof(char), aad, aad_len, key, iv, IV_LEN, ciphertext, tag);
+				ct_len = gcm_encrypt(plaintext, sizeof(char), aad, aad_len, this_user->session_key, iv, IV_LEN, ciphertext, tag);
 				if(ct_len <= 0){ 
 					error_handler("encrypt() failed");
 					free_var(CLIENT);
@@ -292,7 +307,7 @@ int main(){
 				}
 
 				//	DECRYPT CT
-				ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, key, iv, IV_LEN, plaintext);
+				ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, this_user->session_key, iv, IV_LEN, plaintext);
 				if(ret < 0){
 					error_handler("decrypt failed");
 					free_var(CLIENT);
@@ -365,7 +380,7 @@ int main(){
 				}
 				file_size = s_buf->st_size;
 
-				memory_handler(CLIENT, socket_d, file_size, &file_size_byte);
+				memory_handler(CLIENT, socket_d, sizeof(int)/*file_size*/, &file_size_byte);
 				serialize_int(file_size, file_size_byte);
 				strncpy((char*)plaintext, (char*)file1, strlen((char*)file1));
 
@@ -382,7 +397,7 @@ int main(){
 				memcpy(&aad[17], &file_size, sizeof(int));
 
 				//	CIPHERTEXT LEN SERIALIZATION
-				ct_len = gcm_encrypt(plaintext, strlen((char*)plaintext), aad, aad_len, key, iv, IV_LEN, ciphertext, tag);
+				ct_len = gcm_encrypt(plaintext, strlen((char*)plaintext), aad, aad_len, this_user->session_key, iv, IV_LEN, ciphertext, tag);
 				if(ct_len <= 0){ 
 					error_handler("encrypt() failed");
 					free_var(CLIENT);
@@ -535,7 +550,7 @@ int main(){
 				}
 
 				//	DECRYPT CT
-				ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, key, iv, IV_LEN, plaintext);
+				ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, this_user->session_key, iv, IV_LEN, plaintext);
 				if(ret < 0){
 					error_handler("decrypt failed");
 					free_var(CLIENT);
@@ -569,8 +584,8 @@ int main(){
 				FILE *fd;
 				unsigned char *data_pt, *data_ct, *data_aad, *data_aad_len_byte, *data_ct_len_byte, *data_payload_len_byte, *data_resp_msg, *data_rcv_msg, *file_buffer;
 
-				memory_handler(CLIENT, socket_d, CHUNK, &data_pt);
-				memory_handler(CLIENT, socket_d, CHUNK, &data_ct);
+				//memory_handler(CLIENT, socket_d, CHUNK, &data_pt);
+				//memory_handler(CLIENT, socket_d, CHUNK, &data_ct);
 				memory_handler(CLIENT, socket_d, aad_len, &data_aad);
 				//memory_handler(CLIENT, socket_d, file_size, &file_buffer);
 				file_buffer = (unsigned char*)calloc(file_size, sizeof(unsigned char));
@@ -587,11 +602,19 @@ int main(){
 					close(socket_d);
 					exit(0);
 				}
-				cout << "read: " << fread(file_buffer, 1, file_size, fd) << endl;
+				fread(file_buffer, 1, file_size, fd);
 				int size_res = file_size;
 				if(file_size > CHUNK){
 					cout << "File greater than 1Mb - Proceding to send chunks" << endl;
 					for(int i = 0; i < file_size - CHUNK && file_size > CHUNK; i += CHUNK){	// If file_size is greater than 1 chunk (1mb) then send the file divided in chunk but not the last
+						data_pt = (unsigned char*)malloc(CHUNK);
+						data_ct = (unsigned char*)malloc(CHUNK);
+						if(!data_pt || !data_ct){
+							error_handler("malloc() failed");
+							free_var(CLIENT);
+							close(socket_d);
+							exit(0);
+						}
 						memcpy(data_pt, &file_buffer[i], CHUNK);
 						// RANDOM VALUES
 						rc = RAND_bytes(nonce, NONCE_LEN);
@@ -629,13 +652,14 @@ int main(){
 						memcpy(&data_aad[17], &flag, sizeof(unsigned char));
 						
 						// CT SERIALIZATION
-						ct_len = gcm_encrypt(data_pt, strlen((char*)data_pt), data_aad, aad_len, key, iv, IV_LEN, data_ct, tag);
+						ct_len = gcm_encrypt(data_pt, CHUNK, data_aad, aad_len, this_user->session_key, iv, IV_LEN, data_ct, tag);
 						if(ct_len <= 0){ 
 							error_handler("encrypt() failed");
 							free_var(CLIENT);
 							close(socket_d);
 							exit(0);
 						}
+
 						memory_handler(CLIENT, socket_d, sizeof(int), &data_ct_len_byte);
 						serialize_int(ct_len, data_ct_len_byte);
 
@@ -646,7 +670,7 @@ int main(){
 
 						//	BUILD MESSAGE (resp_msg)
 						msg_len = sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;
-						cout << "msg_len: " << msg_len << endl;
+						//cout << "msg_len: " << msg_len << endl;
 						memory_handler(CLIENT, socket_d, msg_len, &data_resp_msg);
 
 						memcpy(data_resp_msg, data_payload_len_byte, sizeof(int));
@@ -666,16 +690,16 @@ int main(){
 						}
 						// end send
 						cout << "Sent chunk #" << i/CHUNK << endl;
-						//memset(data_pt, 0, CHUNK);
-						free_var(CLIENT); 
+						free(data_pt);
+						free(data_ct);
 						size_res -= CHUNK;
 					}
 				}
 				// send last chunk or the single chunk composing the file
-				//cout << "Proceding to send the last chunk" << endl << "size res: " << size_res << endl;
+				cout << "Proceding to send the last chunk" << endl;
 				free_var(CLIENT);
-				memory_handler(CLIENT, socket_d, file_size, &data_pt);
-				memory_handler(CLIENT, socket_d, file_size, &data_ct);
+				memory_handler(CLIENT, socket_d, size_res, &data_pt);
+				memory_handler(CLIENT, socket_d, size_res, &data_ct);
 				memory_handler(CLIENT, socket_d, aad_len, &data_aad);
 
 				memcpy(data_pt, &file_buffer[file_size - size_res], size_res);
@@ -720,7 +744,7 @@ int main(){
 				memcpy(&data_aad[17], &flag, sizeof(unsigned char));
 
 				// CT SERIALIZATION
-				ct_len = gcm_encrypt(data_pt, file_size, data_aad, aad_len, key, iv, IV_LEN, data_ct, tag);
+				ct_len = gcm_encrypt(data_pt, size_res, data_aad, aad_len, this_user->session_key, iv, IV_LEN, data_ct, tag);
 				if(ct_len <= 0){ 
 					error_handler("encrypt() failed");
 					free_var(CLIENT);
@@ -874,7 +898,7 @@ int main(){
 				}
 
 				//	DECRYPT CT
-				ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, key, iv, IV_LEN, plaintext);
+				ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, this_user->session_key, iv, IV_LEN, plaintext);
 				if(ret < 0){
 					error_handler("decrypt failed");
 					free_var(CLIENT);
@@ -901,7 +925,6 @@ int main(){
 				}
 				strncpy(fullpath, cl_dir, strlen(cl_dir));
 				fullpath = strncat(fullpath, (char*)file1, strlen((char*)file1));
-				//cout << "Fullpath: " << fullpath << endl;
 				if(access(fullpath, F_OK) == 0){	// File already exist
 					error_handler("File already exists on this device.");
 					free(fullpath);
@@ -940,7 +963,7 @@ int main(){
 				//	SERIALIZATION DL-1
 		
 				//	AAD SERIALIZATION
-				aad_len = 1 + NONCE_LEN;	//opcode + lunghezza nonce
+				aad_len = 1 + NONCE_LEN;	
 				memory_handler(CLIENT, socket_d, aad_len, &aad);
 				memory_handler(CLIENT, socket_d, sizeof(int), &aad_len_byte);
 
@@ -949,7 +972,7 @@ int main(){
 				memcpy(&aad[1], nonce, NONCE_LEN);
 
 				//	CIPHERTEXT LEN SERIALIZATION
-				ct_len = gcm_encrypt(plaintext, strlen((char*)plaintext), aad, aad_len, key, iv, IV_LEN, ciphertext, tag);
+				ct_len = gcm_encrypt(plaintext, strlen((char*)plaintext), aad, aad_len, this_user->session_key, iv, IV_LEN, ciphertext, tag);
 				if(ct_len <= 0){ 
 					error_handler("encrypt() failed");
 					free_var(CLIENT);
@@ -961,7 +984,7 @@ int main(){
 				serialize_int(ct_len, ct_len_byte);
 
 				//	PAYLOAD LEN SERIALIZATION
-				payload_len = sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;	// ricalcolo per download
+				payload_len = sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;	
 				memory_handler(CLIENT, socket_d, sizeof(int), &payload_len_byte);
 				serialize_int(payload_len, payload_len_byte);
 
@@ -1013,7 +1036,7 @@ int main(){
 					exit(0);
 				}
 				if(ret == 0){
-					error_handler("nothing to read! 1");	// double free if server down -- #malloc = 12, index = 12
+					error_handler("nothing to read! 1");
 					free_var(CLIENT);
 					free(fullpath);
 					close(socket_d);
@@ -1117,7 +1140,7 @@ int main(){
 				}
 
 				//	DECRYPT CT
-				ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, key, iv, IV_LEN, plaintext);
+				ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, this_user->session_key, iv, IV_LEN, plaintext);
 				if(ret < 0){
 					error_handler("decrypt failed");
 					free_var(CLIENT);
@@ -1128,7 +1151,6 @@ int main(){
 
 				flag = aad[17];
 				if(flag != '1'){
-					// interrompi tutto
 					error_handler("Download error. Aborting...");
 					cout << plaintext << endl;
 					free_var(CLIENT);
@@ -1136,16 +1158,16 @@ int main(){
 					break;
 				}
 				memcpy(&file_size, &aad[18], sizeof(int));	// getting file size from replay
-
 				cout << "Download request OK. Starting..." << endl;
 				free_var(CLIENT); // RESET, reallocation needed
 
-				int chunk_num;
+				int chunk_num, size_res;
 				if(file_size % CHUNK != 0)
 					chunk_num = (file_size / CHUNK) + 1;
 				else
 					chunk_num = file_size / CHUNK;
 
+				size_res = file_size;
 				FILE *dl_file;
 				dl_file = fopen(fullpath, "ab");
 				if(!dl_file){
@@ -1306,7 +1328,7 @@ int main(){
 
 					//	DECRYPT CT
 					memory_handler(CLIENT, socket_d, CHUNK, &chunk_buf);
-					ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, key, iv, IV_LEN, chunk_buf);
+					ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, this_user->session_key, iv, IV_LEN, chunk_buf);
 					if(ret < 0){
 						error_handler("decrypt failed");
 						free_var(CLIENT);
@@ -1328,16 +1350,29 @@ int main(){
 					}
 
 					// WRITE BYTES TO FILE
-					if((ret = fprintf(dl_file, "%s", chunk_buf)) < 0){
-						close(socket_d);
-						fclose(dl_file);
-						remove(fullpath);
-						free(fullpath);
-						free_var(CLIENT);
-						exit(0);
+					if(i == chunk_num - 1){ // last chunk, might be < 1MB
+						if((ret = fwrite(chunk_buf, 1, size_res, dl_file)) < 0){
+							close(socket_d);
+							fclose(dl_file);
+							remove(fullpath);
+							free(fullpath);
+							free_var(CLIENT);
+							exit(0);
+						}
+					}
+					else{
+						if((ret = fwrite(chunk_buf, 1, CHUNK, dl_file)) < 0){
+							close(socket_d);
+							fclose(dl_file);
+							remove(fullpath);
+							free(fullpath);
+							free_var(CLIENT);
+							exit(0);
+						}
 					}
 					cout << "Downloaded chunk #" << (i+1) << " su " << chunk_num << endl;
 					free_var(CLIENT);
+					size_res -= CHUNK;
 				}
 				
 				cout << "Download completed!" << endl;
@@ -1374,14 +1409,13 @@ int main(){
 				}
 
 				opcode[0] = '5';
-				char* full_command = strcat((char*)file1,"|");
-				full_command = strcat((char*)full_command, (char*)file2);
-
+				char* full_command = strncat((char*)file1, "|", strlen("|"));
+				full_command = strncat((char*)full_command, (char*)file2, 16);
 				strncpy((char*)plaintext, (char*)full_command, strlen((char*)full_command));
 				// SERIALIZATION UP-1
 
 				// AAD SERIALIZATION
-				aad_len = 1 + NONCE_LEN + sizeof(int); //opcode + lunghezza nonce + int(file size) -- opcode = unsigned char
+				aad_len = 1 + NONCE_LEN + sizeof(int);
 				memory_handler(CLIENT, socket_d, aad_len, &aad);
 				memory_handler(CLIENT, socket_d, sizeof(int), &aad_len_byte);
 
@@ -1390,7 +1424,7 @@ int main(){
 				memcpy(&aad[1], nonce, NONCE_LEN);
 
 				// CIPHERTEXT LEN SERIALIZATION
-				ct_len = gcm_encrypt(plaintext, strlen((char*)plaintext), aad, aad_len, key, iv, IV_LEN, ciphertext, tag);
+				ct_len = gcm_encrypt(plaintext, strlen((char*)plaintext), aad, aad_len, this_user->session_key, iv, IV_LEN, ciphertext, tag);
 				if(ct_len <= 0){
 				    error_handler("encrypt() failed");
 				    free_var(CLIENT);
@@ -1401,7 +1435,7 @@ int main(){
 				serialize_int(ct_len, ct_len_byte);
 
 				// PAYLOAD LEN SERIALIZATION
-				payload_len = sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN; // ricalcolo per upload
+				payload_len = sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;
 				memory_handler(CLIENT, socket_d, sizeof(int), &payload_len_byte);
 				serialize_int(payload_len, payload_len_byte);
 
@@ -1542,7 +1576,7 @@ int main(){
 				}
 
 				// DECRYPT CT
-				ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, key, iv, IV_LEN, plaintext);
+				ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, this_user->session_key, iv, IV_LEN, plaintext);
 				if(ret < 0){
 				    error_handler("decrypt failed");
 				    free_var(CLIENT);
@@ -1602,7 +1636,7 @@ int main(){
 				memcpy(&aad[1], nonce, NONCE_LEN);
 
 				//	CIPHERTEXT LEN SERIALIZATION
-				ct_len = gcm_encrypt(plaintext, strlen((char*)plaintext), aad, aad_len, key, iv, IV_LEN, ciphertext, tag);
+				ct_len = gcm_encrypt(plaintext, strlen((char*)plaintext), aad, aad_len, this_user->session_key, iv, IV_LEN, ciphertext, tag);
 				if(ct_len <= 0){
 				    error_handler("encrypt() failed");
 				    free_var(CLIENT);
@@ -1755,7 +1789,7 @@ int main(){
 				}
 
 				// DECRYPT CT
-				ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, key, iv, IV_LEN, plaintext);
+				ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, this_user->session_key, iv, IV_LEN, plaintext);
 				if(ret < 0){
 				    error_handler("decrypt failed");
 				    free_var(CLIENT);
@@ -1771,10 +1805,206 @@ int main(){
 				free_var(CLIENT);
 				break;
 			}
+			case LOGOUT:{
+				int payload_len, ct_len, aad_len, rc, msg_len;
+				unsigned char *rcv_msg, *resp_msg, *tag, *iv, *plaintext, *ciphertext, *opcode, *nonce, *aad, *aad_len_byte, *payload_len_byte, *ct_len_byte;
+				//unsigned char flag;
+
+				//	MALLOC & RAND VARIABLES
+				memory_handler(CLIENT, socket_d, 1, &plaintext);
+				memory_handler(CLIENT, socket_d, NONCE_LEN, &nonce);
+				memory_handler(CLIENT, socket_d, IV_LEN, &iv);
+				memory_handler(CLIENT, socket_d, TAG_LEN, &tag);
+				memory_handler(CLIENT, socket_d, 1, &opcode);
+				memory_handler(CLIENT, socket_d, 1, &ciphertext);
+
+				rc = RAND_bytes(nonce, NONCE_LEN);
+				if(rc != 1){
+				    error_handler("nonce generation failed");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+				rc = RAND_bytes(iv, IV_LEN);
+				if(rc != 1){
+				    error_handler("iv generation failed");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+
+				opcode[0] = '7';
+				plaintext[0] = DUMMY_BYTE;
+
+				//	AAD SERIALIZATION
+				aad_len = 1 + NONCE_LEN;	
+				memory_handler(CLIENT, socket_d, aad_len, &aad);
+				memory_handler(CLIENT, socket_d, sizeof(int), &aad_len_byte);
+
+				serialize_int(aad_len, aad_len_byte);
+				memcpy(aad, opcode, sizeof(unsigned char));
+				memcpy(&aad[1], nonce, NONCE_LEN);
+
+				//	CIPHERTEXT LEN SERIALIZATION
+				ct_len = gcm_encrypt(plaintext, 1, aad, aad_len, this_user->session_key, iv, IV_LEN, ciphertext, tag);
+				if(ct_len <= 0){
+				    error_handler("encrypt() failed");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+				memory_handler(CLIENT, socket_d, sizeof(int), &ct_len_byte);
+				serialize_int(ct_len, ct_len_byte);
+
+				//	PAYLOAD LEN SERIALIZATION
+				payload_len = sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;
+				memory_handler(CLIENT, socket_d, sizeof(int), &payload_len_byte);
+				serialize_int(payload_len, payload_len_byte);
+
+				//	BUILD MESSAGE
+				msg_len = sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;
+				memory_handler(CLIENT, socket_d, msg_len, &resp_msg);
+
+				memcpy(resp_msg, payload_len_byte, sizeof(int));
+				memcpy((unsigned char*)&resp_msg[sizeof(int)], aad_len_byte, sizeof(int));
+				memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int)], aad, aad_len);
+				memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len], ct_len_byte, sizeof(int));
+				memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int)], ciphertext, ct_len);
+				memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len], tag, TAG_LEN);
+				memcpy((unsigned char*)&resp_msg[sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN], iv, IV_LEN);
+
+				//	SEND PACKET
+				if((ret = send(socket_d, (void*)resp_msg, msg_len, 0)) < 0){
+				    error_handler("send() failed");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+
+				// RECEIVE SERVER REPLAY
+
+				// READ PAYLOAD_LEN
+				memory_handler(CLIENT, socket_d, sizeof(int), &rcv_msg);
+				if((ret = read_byte(socket_d, (void*)rcv_msg, sizeof(int))) < 0){
+				    error_handler("recv() [rcv_msg] failed");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+				if(ret == 0){
+				    error_handler("nothing to read! 1");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+				memcpy(&msg_len, rcv_msg, sizeof(int));
+
+				// READ AAD_LEN & AAD
+				if((ret = read_byte(socket_d, (void*)aad_len_byte, sizeof(int))) < 0){
+				    error_handler("recv() [aad_len_byte] failed");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+				if(ret == 0){
+				    error_handler("nothing to read! 2");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+				memcpy(&aad_len, aad_len_byte, sizeof(int));
+				if((ret = read_byte(socket_d, (void*)aad, aad_len)) < 0){
+				    error_handler("recv() [aad] failed");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+				if(ret == 0){
+				    error_handler("nothing to read! 3");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+				cmd = int(aad[0]) - OFFSET;
+
+				// READ CT_LEN & CIPHERTEXT
+				if((ret = read_byte(socket_d, (void*)ct_len_byte, sizeof(int))) < 0){
+				    error_handler("recv() [ct_len_byte] failed");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+				if(ret == 0){
+				    error_handler("nothing to read! 4");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+				memcpy(&ct_len, ct_len_byte, sizeof(int));
+
+				if((ret = read_byte(socket_d, (void*)ciphertext, ct_len)) < 0){
+				    error_handler("recv() [ciphertext] failed");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+				if(ret == 0){
+				    error_handler("nothing to read! 5");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+
+				// READ TAG
+				if((ret = read_byte(socket_d, (void*)tag, TAG_LEN)) < 0){
+				    error_handler("recv() [tag] failed");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+				if(ret == 0){
+				    error_handler("nothing to read! 6");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+
+				// READ IV
+				if((ret = read_byte(socket_d, (void*)iv, IV_LEN)) < 0){
+				    error_handler("recv() [iv] failed");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+				if(ret == 0){
+				    error_handler("nothing to read! 7");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+
+				// DECRYPT CT
+				ret = gcm_decrypt(ciphertext, ct_len, aad, aad_len, tag, this_user->session_key, iv, IV_LEN, plaintext);
+				if(ret < 0){
+				    error_handler("decrypt failed");
+				    free_var(CLIENT);
+				    close(socket_d);
+				    exit(0);
+				}
+
+				memset(this_user->session_key, '\0', 32);
+				free(this_user->session_key);
+				free_var(CLIENT);
+				this_user = NULL;
+				close(socket_d);
+				cout << "Exit program..." << endl;
+				exit(0);
+				break;
+			}
 		    default:	// technically not possible
 		        	break;
 		}
-		
+		cout << endl << endl;
     }
     return 0; //Unreachable code
 }
