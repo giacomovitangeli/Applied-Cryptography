@@ -6,9 +6,9 @@
 using namespace std;
 
 int cl_index_free_buf = 0;
-unsigned char *cl_free_buf[1024] = {0};
+unsigned char *cl_free_buf[8192] = {0};
 int sv_index_free_buf = 0;
-unsigned char *sv_free_buf[1024] = {0};
+unsigned char *sv_free_buf[8192] = {0};
 
 //	START CRYPTO UTILITY FUNCTIONS
 
@@ -614,6 +614,17 @@ void serialize_int(int val, unsigned char *c){
 	c[1] = (val>>8) & 0xFF;
 	c[2] = (val>>16) & 0xFF;
 	c[3] = (val>>24) & 0xFF;
+}
+
+void serialize_longint(long int val, unsigned char *c){
+	c[0] =  val & 0xFF;
+	c[1] = (val>>8) & 0xFF;
+	c[2] = (val>>16) & 0xFF;
+	c[3] = (val>>24) & 0xFF;
+	c[4] = (val>>32) & 0xFF;
+	c[5] = (val>>40) & 0xFF;
+	c[6] = (val>>48) & 0xFF;
+	c[7] = (val>>56) & 0xFF;
 }
 
 unsigned char* serialize_certificate(string path, int *cert_len){

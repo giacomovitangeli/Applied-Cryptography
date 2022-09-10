@@ -330,7 +330,8 @@ int main(){
 				break;
 			}
 			case UPLOAD:{	// up command 1 - request - [pay_len][aad_len]{[nonce][opcode][file_size_req]}[ciph_len]([ciphertext - file_name])[TAG][IV]
-				int payload_len, ct_len, aad_len, rc, msg_len, file_size;
+				int payload_len, ct_len, aad_len, rc, msg_len;
+				long int file_size;
 	    			unsigned char *rcv_msg, *resp_msg, *tag, *iv, *plaintext, *ciphertext, *opcode, *nonce, *aad, *aad_len_byte, *payload_len_byte, *ct_len_byte, *file_size_byte;
 				unsigned char flag;
 				struct stat *s_buf;	
@@ -373,28 +374,41 @@ int main(){
 				cl_index_free_buf++;
 
 				if((stat((char*)path1, s_buf)) < 0){
-					error_handler("stat failed");
+					error_handler("No file with this name in your folder (or stat() failed)");
 					free_var(CLIENT);
-					close(socket_d);
-					exit(0);
+					//close(socket_d);
+					//exit(0);
+					break;
 				}
 				file_size = s_buf->st_size;
-
-				memory_handler(CLIENT, socket_d, sizeof(int)/*file_size*/, &file_size_byte);
-				serialize_int(file_size, file_size_byte);
+				if(file_size > 2147483647){
+					memory_handler(CLIENT, socket_d, sizeof(long int), &file_size_byte);
+					serialize_longint(file_size, file_size_byte);
+				}
+				else{
+					memory_handler(CLIENT, socket_d, sizeof(int), &file_size_byte);
+					serialize_int(file_size, file_size_byte);
+				}
 				strncpy((char*)plaintext, (char*)file1, strlen((char*)file1));
 
 				//	SERIALIZATION UP-1
 		
 				//	AAD SERIALIZATION
-				aad_len = 1 + NONCE_LEN + sizeof(int);	//opcode + lunghezza nonce + int(file size) 
+				if(file_size > 2147483647)
+					aad_len = 1 + NONCE_LEN + sizeof(long int);
+				else
+					aad_len = 1 + NONCE_LEN + sizeof(int);
+					
 				memory_handler(CLIENT, socket_d, aad_len, &aad);
 				memory_handler(CLIENT, socket_d, sizeof(int), &aad_len_byte);
 
 				serialize_int(aad_len, aad_len_byte);
 				memcpy(aad, opcode, sizeof(unsigned char));
 				memcpy(&aad[1], nonce, NONCE_LEN);
-				memcpy(&aad[17], &file_size, sizeof(int));
+				if(file_size > 2147483647)
+					memcpy(&aad[17], &file_size, sizeof(long int));
+				else
+					memcpy(&aad[17], &file_size, sizeof(int));
 
 				//	CIPHERTEXT LEN SERIALIZATION
 				ct_len = gcm_encrypt(plaintext, strlen((char*)plaintext), aad, aad_len, this_user->session_key, iv, IV_LEN, ciphertext, tag);
@@ -459,7 +473,7 @@ int main(){
 					exit(0);
 				}
 				if(ret == 0){
-					error_handler("nothing to read! 1");	// double free if server down -- #malloc = 12, index = 12
+					error_handler("nothing to read! 1");
 					free_var(CLIENT);
 					close(socket_d);
 					exit(0);
@@ -560,7 +574,6 @@ int main(){
 
 				flag = aad[17];
 				if(flag != '1'){
-					// interrompi tutto
 					error_handler("Upload error");
 					cout << plaintext << endl;
 					free_var(CLIENT);
@@ -584,17 +597,8 @@ int main(){
 				FILE *fd;
 				unsigned char *data_pt, *data_ct, *data_aad, *data_aad_len_byte, *data_ct_len_byte, *data_payload_len_byte, *data_resp_msg, *data_rcv_msg, *file_buffer;
 
-				//memory_handler(CLIENT, socket_d, CHUNK, &data_pt);
-				//memory_handler(CLIENT, socket_d, CHUNK, &data_ct);
 				memory_handler(CLIENT, socket_d, aad_len, &data_aad);
-				//memory_handler(CLIENT, socket_d, file_size, &file_buffer);
-				file_buffer = (unsigned char*)calloc(file_size, sizeof(unsigned char));
-				if(!file_buffer){
-					error_handler("malloc() failed");
-					free_var(CLIENT);
-					close(socket_d);
-					exit(0);
-				}
+
 				fd = fopen((char*)path1, "rb");
 				if(!fd){
 					error_handler("file opening failed");
@@ -602,11 +606,12 @@ int main(){
 					close(socket_d);
 					exit(0);
 				}
-				fread(file_buffer, 1, file_size, fd);
-				int size_res = file_size;
+				
+				long int size_res = file_size;
+				cout << "file size: " << file_size << endl;
 				if(file_size > CHUNK){
 					cout << "File greater than 1Mb - Proceding to send chunks" << endl;
-					for(int i = 0; i < file_size - CHUNK && file_size > CHUNK; i += CHUNK){	// If file_size is greater than 1 chunk (1mb) then send the file divided in chunk but not the last
+					for(long int i = 0; i < file_size - CHUNK && file_size > CHUNK; i += CHUNK){	// If file_size is greater than 1 chunk (1mb) then send the file divided in chunk but not the last
 						data_pt = (unsigned char*)malloc(CHUNK);
 						data_ct = (unsigned char*)malloc(CHUNK);
 						if(!data_pt || !data_ct){
@@ -615,7 +620,18 @@ int main(){
 							close(socket_d);
 							exit(0);
 						}
-						memcpy(data_pt, &file_buffer[i], CHUNK);
+						file_buffer = (unsigned char*)calloc(CHUNK, sizeof(unsigned char));
+						if(!file_buffer){
+							error_handler("malloc() failed");
+							free_var(CLIENT);
+							close(socket_d);
+							exit(0);
+						}
+					
+						if((fread(file_buffer, sizeof(unsigned char), CHUNK, fd)) <= 0)
+							cout << "err" << endl;
+						memcpy(data_pt, file_buffer, CHUNK);
+
 						// RANDOM VALUES
 						rc = RAND_bytes(nonce, NONCE_LEN);
 						if(rc != 1){
@@ -643,7 +659,6 @@ int main(){
 						flag = '0';
 						opcode[0] = '3';
 
-						//memory_handler(CLIENT, socket_d, aad_len, &data_aad_len_byte);
 						memory_handler(CLIENT, socket_d, aad_len, &data_aad);
 						memory_handler(CLIENT, socket_d, sizeof(int), &data_aad_len_byte);
 						serialize_int(aad_len, data_aad_len_byte);
@@ -670,7 +685,6 @@ int main(){
 
 						//	BUILD MESSAGE (resp_msg)
 						msg_len = sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;
-						//cout << "msg_len: " << msg_len << endl;
 						memory_handler(CLIENT, socket_d, msg_len, &data_resp_msg);
 
 						memcpy(data_resp_msg, data_payload_len_byte, sizeof(int));
@@ -683,7 +697,8 @@ int main(){
 
 						//	SEND PACKET
 						if((ret = send(socket_d, (void*)data_resp_msg, msg_len, 0)) < 0){
-				    			error_handler("send() failed");
+				    			error_handler("send() failed ");
+							perror("send fails");
 							free_var(CLIENT);
 							close(socket_d);
 							exit(0);
@@ -692,7 +707,10 @@ int main(){
 						cout << "Sent chunk #" << i/CHUNK << endl;
 						free(data_pt);
 						free(data_ct);
+						free(file_buffer);
 						size_res -= CHUNK;
+						if(size_res < CHUNK)
+							break;
 					}
 				}
 				// send last chunk or the single chunk composing the file
@@ -701,8 +719,9 @@ int main(){
 				memory_handler(CLIENT, socket_d, size_res, &data_pt);
 				memory_handler(CLIENT, socket_d, size_res, &data_ct);
 				memory_handler(CLIENT, socket_d, aad_len, &data_aad);
+				memory_handler(CLIENT, socket_d, size_res, &file_buffer);
 
-				memcpy(data_pt, &file_buffer[file_size - size_res], size_res);
+				memcpy(data_pt, file_buffer, size_res);
 	
 				// RANDOM VALUES
 				memory_handler(CLIENT, socket_d, NONCE_LEN, &nonce);
@@ -911,7 +930,8 @@ int main(){
 				break;
 			}
 		    case DOWNLOAD:{	// dl command
-				int payload_len, ct_len, aad_len, rc, msg_len, file_size;
+				int payload_len, ct_len, aad_len, rc, msg_len;
+				long int file_size;
 	    			unsigned char *rcv_msg, *resp_msg, *tag, *iv, *plaintext, *ciphertext, *opcode, *nonce, *aad, *aad_len_byte, *payload_len_byte, *ct_len_byte;
 				unsigned char flag;
 
@@ -1157,11 +1177,12 @@ int main(){
 					free(fullpath);
 					break;
 				}
-				memcpy(&file_size, &aad[18], sizeof(int));	// getting file size from replay
+				memcpy(&file_size, &aad[18], sizeof(long int));	// getting file size from replay
 				cout << "Download request OK. Starting..." << endl;
 				free_var(CLIENT); // RESET, reallocation needed
 
-				int chunk_num, size_res;
+				int chunk_num;
+				long int size_res;
 				if(file_size % CHUNK != 0)
 					chunk_num = (file_size / CHUNK) + 1;
 				else

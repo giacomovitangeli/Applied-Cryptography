@@ -28,7 +28,6 @@
 #include <fstream>
 #include <openssl/err.h>
 #include <openssl/pem.h>
-//#include <ossl.h>
 
 #define PORT 4242
 
@@ -70,10 +69,10 @@ extern unsigned char key[33];
 //	END
 
 // STRUCT MANAGING MEMORY
-extern unsigned char *sv_free_buf[1024];
+extern unsigned char *sv_free_buf[8192];
 extern int sv_index_free_buf;
 
-extern unsigned char *cl_free_buf[1024];
+extern unsigned char *cl_free_buf[8192];
 extern int cl_index_free_buf;
 
 typedef struct _user {
@@ -117,6 +116,7 @@ int blacklisting_cmd(string);
 int get_cmd(char*);
 
 void serialize_int(int, unsigned char*);
+void serialize_longint(long int, unsigned char*);
 int read_byte(int, void*, ssize_t);
 int get_num_file(const char*);
 

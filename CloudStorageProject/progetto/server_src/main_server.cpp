@@ -401,7 +401,7 @@ replay_ls:
 							unsigned char *aad_len_byte_up = NULL, *aad_up = NULL, *tag_up = NULL, *iv_up = NULL, *payload_len_byte_up = NULL;
 							int ct_len_up, aad_len_up, msg_len_up, rc_up, payload_len_up;
 
-							int file_size;					
+							long int file_size;					
 							unsigned char flag = flag_check;
 							char *fullpath;
 
@@ -433,7 +433,11 @@ replay_ls:
 									plaintext_up[0] = DUMMY_BYTE;
 								}
 							}
-							memcpy(&file_size, &aad[17], sizeof(int));
+							if(file_size > 2147483647)
+								memcpy(&file_size, &aad[17], sizeof(long int));
+							else
+								memcpy(&file_size, &aad[17], sizeof(int));
+							
 							if(file_size > 4294967296)
 								flag = '0';
 							
@@ -518,7 +522,8 @@ replay_ls:
 							//	RECEIVING CHUNKS
 				
 							unsigned char *chunk_buf;
-							int chunk_num, size_res;
+							int chunk_num;
+							long int size_res;
 
 							if(file_size % CHUNK != 0)
 								chunk_num = (file_size / CHUNK) + 1;
@@ -830,7 +835,7 @@ replay_ls:
 							unsigned char *aad_len_byte_dl = NULL, *aad_dl = NULL, *tag_dl = NULL, *iv_dl = NULL, *payload_len_byte_dl = NULL, *file_size_byte_dl = NULL;
 							int ct_len_dl, aad_len_dl, msg_len_dl, rc_dl, payload_len_dl;
 
-							int file_size;					
+							long int file_size;					
 							unsigned char flag = flag_check;
 							char *fullpath;
 
@@ -887,8 +892,15 @@ replay_ls:
 							}
 							file_size = s_buf->st_size;
 replay_dl:
-							memory_handler(1, k, sizeof(int), &file_size_byte_dl);
-							serialize_int(file_size, file_size_byte_dl);
+							if(file_size > 2147483647){
+								memory_handler(1, k, sizeof(long int), &file_size_byte_dl);
+								serialize_longint(file_size, file_size_byte_dl);
+							}
+							else{
+								memory_handler(1, k, sizeof(int), &file_size_byte_dl);
+								serialize_int(file_size, file_size_byte_dl);
+							}
+							
 							
 
 							//	MALLOC & RAND VARIABLES
@@ -927,7 +939,10 @@ replay_dl:
 							memcpy(aad_dl, opcode_dl, sizeof(unsigned char));
 							memcpy(&aad_dl[1], nonce_dl, NONCE_LEN);
 							memcpy(&aad_dl[17], &flag, sizeof(unsigned char));
-							memcpy(&aad_dl[18], &file_size, sizeof(int));
+							if(file_size > 2147483647)
+								memcpy(&aad_dl[18], &file_size, sizeof(long int));
+							else
+								memcpy(&aad_dl[18], &file_size, sizeof(int));
 
 							//	CIPHERTEXT LEN SERIALIZATION
 							ct_len_dl = gcm_encrypt(plaintext_dl, strlen((char*)plaintext_dl), aad_dl, aad_len_dl, session_key, iv_dl, IV_LEN, ciphertext_dl, tag_dl);
@@ -978,29 +993,20 @@ replay_dl:
 							free_var(SERVER);
 							// END
 
-							unsigned char* file_buffer = (unsigned char*)calloc(file_size, sizeof(unsigned char));
-							if(!file_buffer){
-								error_handler("malloc() failed");
-								free_var(SERVER);
-								free(fullpath);
-								close(k);
-								exit(0);
-							}
 							FILE *fd;
 							fd = fopen(fullpath, "rb");
 							if(!fd){
 								error_handler("file opening failed");
 								free_var(SERVER);
 								free(fullpath);
-								free(file_buffer);
 								close(k);
 								exit(0);
 							}
-							fread(file_buffer, 1, file_size, fd);
-							int size_res = file_size;
+							unsigned char* file_buffer = NULL;
+							long int size_res = file_size;
 							if(file_size > CHUNK){
 								cout << "File greater than 1Mb - Proceding to send chunks" << endl;
-								for(int i = 0; i < file_size - CHUNK && file_size > CHUNK; i += CHUNK){	// If file_size is greater than 1 chunk (1mb) then send the file divided in chunk but not the last
+								for(long int i = 0; i < file_size - CHUNK && file_size > CHUNK; i += CHUNK){	// If file_size is greater than 1 chunk (1mb) then send the file divided in chunk but not the last
 									plaintext_dl = (unsigned char*)malloc(CHUNK);
 									ciphertext_dl = (unsigned char*)malloc(CHUNK);
 									if(!plaintext_dl || !ciphertext_dl){
@@ -1009,7 +1015,16 @@ replay_dl:
 										close(k);
 										exit(0);
 									}
-									memcpy(plaintext_dl, &file_buffer[i], CHUNK);
+									file_buffer = (unsigned char*)calloc(CHUNK, sizeof(unsigned char));
+									if(!file_buffer){
+										error_handler("malloc() failed");
+										free_var(SERVER);
+										free(fullpath);
+										close(k);
+										exit(0);
+									}
+									fread(file_buffer, 1, CHUNK, fd);
+									memcpy(plaintext_dl, file_buffer, CHUNK);
 
 									//	MALLOC & RAND VARIABLES
 									memory_handler(SERVER, k, NONCE_LEN, &nonce_dl);
@@ -1093,14 +1108,20 @@ replay_dl:
 									size_res -= CHUNK;
 									free(plaintext_dl);
 									free(ciphertext_dl);
+									free(file_buffer);
+									free_var(SERVER);
+									if(size_res < CHUNK)
+										break;
 								}
 							}
 							// send last chunk or the single chunk composing the file
 							cout << "Sending last chunk" << endl;
 							memory_handler(SERVER, k, size_res, &plaintext_dl);
 							memory_handler(SERVER, k, size_res, &ciphertext_dl);
+							memory_handler(SERVER, k, size_res, &file_buffer);
 
-							memcpy(plaintext_dl, &file_buffer[file_size - size_res], size_res);
+							fread(file_buffer, 1, size_res, fd);
+							memcpy(plaintext_dl, file_buffer, size_res);
 
 							//	MALLOC & RAND VARIABLES
 							memory_handler(SERVER, k, NONCE_LEN, &nonce_dl);
@@ -1142,7 +1163,7 @@ replay_dl:
 							memcpy(&aad_dl[17], &flag, sizeof(unsigned char));
 
 							//	CIPHERTEXT LEN SERIALIZATION
-							ct_len_dl = gcm_encrypt(plaintext_dl, strlen((char*)plaintext_dl), aad_dl, aad_len_dl, session_key, iv_dl, IV_LEN, ciphertext_dl, tag_dl);
+							ct_len_dl = gcm_encrypt(plaintext_dl, size_res, aad_dl, aad_len_dl, session_key, iv_dl, IV_LEN, ciphertext_dl, tag_dl);
 							if(ct_len_dl <= 0){ 
 								error_handler("encrypt() failed");
 								close(k);
@@ -1181,7 +1202,7 @@ replay_dl:
 							}
 							free_var(SERVER);
 							free(fullpath);
-							free(file_buffer);
+							//free(file_buffer);
 							cout << "Download completed." << endl;
 							break;
 						}
