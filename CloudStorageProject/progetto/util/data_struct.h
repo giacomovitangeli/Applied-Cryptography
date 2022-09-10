@@ -69,15 +69,17 @@ extern unsigned char key[33];
 //	END
 
 // STRUCT MANAGING MEMORY
-extern unsigned char *sv_free_buf[8192];
+extern unsigned char *sv_free_buf[65536];
 extern int sv_index_free_buf;
 
-extern unsigned char *cl_free_buf[8192];
+extern unsigned char *cl_free_buf[65536];
 extern int cl_index_free_buf;
 
 typedef struct _user {
 	int u_cl_socket;
 	int u_sv_socket;
+	unsigned int c_counter;
+	unsigned int s_counter;
 	char username[11];
 	unsigned char *session_key;
 
@@ -136,7 +138,7 @@ int c_authenticate(int, user**);
 int s_authenticate(int, user**, unsigned char*);
 
 int is_auth(int, user*);
-char* get_user(int, user*);
+user* get_user(int, user*);
 void logout(int, user**);
 
 void print_Server_cert_info(X509*);

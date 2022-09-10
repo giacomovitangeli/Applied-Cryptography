@@ -7,6 +7,7 @@ using namespace std;
 int main(){
 
 	int listner_socket, new_socket, ret, option = 1, k, fdmax;
+	unsigned int sv_counter = 0;
 	struct sockaddr_in my_addr, client_addr;
 	user *list = NULL;
 
@@ -75,6 +76,7 @@ int main(){
 				}
 				else{ // Serving client request
 					int ct_len, aad_len, msg_len, cmd;
+					unsigned int c_counter;
 					unsigned char *rcv_msg, *plaintext, *ciphertext, *ct_len_byte, *aad_len_byte, *aad, *tag, *iv;	
 					unsigned char flag_check = '1';		
 					char *dirname, *username;
@@ -105,7 +107,8 @@ int main(){
 							free_var(SERVER);
 							exit(0);
 					}
-					username = get_user(k, list);
+					user *client = get_user(k, list);
+					username = client->username;
 					if(!username){
 						error_handler("username not found");
 						close(k);
@@ -165,6 +168,13 @@ int main(){
 						exit(0);
 					}
 					cmd = int(aad[0]) - OFFSET;			
+					memcpy(&c_counter, &aad[1], sizeof(unsigned int));
+					if(sv_counter != c_counter || c_counter == UINT_MAX){
+						error_handler("Session exiperd");
+						free_var(SERVER);
+						close(k);
+						exit(0);
+					}
 
 					//	READ CT_LEN & CIPHERTEXT
 					memory_handler(SERVER, k, sizeof(int), &ct_len_byte);
@@ -235,7 +245,6 @@ int main(){
 						exit(0);
 					}
 
-					// to do: check counter (ex nonce)
 					int res_check_command = check_cmd(plaintext, cmd);
 
 					if(res_check_command == -1)
@@ -326,13 +335,13 @@ replay_ls:
 							memory_handler(SERVER, k, 1, &opcode_ls);
 							memory_handler(SERVER, k, IV_LEN, &iv_ls);
 
-							rc_ls = RAND_bytes(nonce_ls, NONCE_LEN);
+							/*rc_ls = RAND_bytes(nonce_ls, NONCE_LEN);
 							if(rc_ls != 1){
 								error_handler("nonce generation failed");
 								close(k);
 								free_var(SERVER);
 								exit(0);
-							}
+							}*/
 
 							rc_ls = RAND_bytes(iv, IV_LEN);
 							if(rc_ls != 1){
@@ -347,14 +356,15 @@ replay_ls:
 							//	SERIALIZATION
 
 							//	AAD SERIALIZATION
-							aad_len_ls = 2 + NONCE_LEN;
+							aad_len_ls = 2 + sizeof(unsigned int);
 							memory_handler(SERVER, k, aad_len_ls, &aad_ls);
 							memory_handler(SERVER, k, sizeof(int), &aad_len_byte_ls);
 							
 							serialize_int(aad_len_ls, aad_len_byte_ls);
 							memcpy(aad_ls, opcode_ls, sizeof(unsigned char));
-							memcpy(&aad_ls[1], nonce_ls, NONCE_LEN);
-							memcpy(&aad_ls[17], &flag, sizeof(unsigned char));
+							sv_counter++;
+							memcpy(&aad_ls[1], &sv_counter, sizeof(unsigned int));
+							memcpy(&aad_ls[5], &flag, sizeof(unsigned char));
 
 							//	CIPHERTEXT LEN SERIALIZATION
 							ct_len_ls = gcm_encrypt(plaintext_ls, strlen((char*)plaintext_ls), aad_ls, aad_len_ls, session_key, iv_ls, IV_LEN, ciphertext_ls, tag_ls);
@@ -400,6 +410,7 @@ replay_ls:
 							unsigned char *resp_msg_up = NULL, *rcv_msg_up = NULL, *opcode_up = NULL, *nonce_up = NULL, *ciphertext_up = NULL, *plaintext_up = NULL, *ct_len_byte_up = NULL;
 							unsigned char *aad_len_byte_up = NULL, *aad_up = NULL, *tag_up = NULL, *iv_up = NULL, *payload_len_byte_up = NULL;
 							int ct_len_up, aad_len_up, msg_len_up, rc_up, payload_len_up;
+							unsigned int c_counter;
 
 							long int file_size;					
 							unsigned char flag = flag_check;
@@ -433,14 +444,11 @@ replay_ls:
 									plaintext_up[0] = DUMMY_BYTE;
 								}
 							}
-							if(file_size > 2147483647)
-								memcpy(&file_size, &aad[17], sizeof(long int));
-							else
-								memcpy(&file_size, &aad[17], sizeof(int));
+							memcpy(&file_size, &aad[5], sizeof(long int));
 							
 							if(file_size > 4294967296)
 								flag = '0';
-							
+				
 							//	MALLOC & RAND VARIABLES
 							memory_handler(SERVER, k, NONCE_LEN, &nonce_up);
 							memory_handler(SERVER, k, TAG_LEN, &tag_up);
@@ -448,13 +456,13 @@ replay_ls:
 							memory_handler(SERVER, k, IV_LEN, &iv_up);
 							
 
-							rc_up = RAND_bytes(nonce_up, NONCE_LEN);
+							/*rc_up = RAND_bytes(nonce_up, NONCE_LEN);
 							if(rc_up != 1){
 								error_handler("nonce generation failed");
 								close(k);
 								free_var(SERVER);
 								exit(0);
-							}
+							}*/
 							rc_up = RAND_bytes(iv, IV_LEN);
 							if(rc_up != 1){
 								error_handler("iv generation failed");
@@ -468,14 +476,16 @@ replay_ls:
 							//	SERIALIZATION
 
 							//	AAD SERIALIZATION
-							aad_len_up = 2 + NONCE_LEN;
+							aad_len_up = 2 + sizeof(unsigned int);
 							memory_handler(SERVER, k, aad_len_up, &aad_up);
 							memory_handler(SERVER, k, sizeof(int), &aad_len_byte_up);
 
 							serialize_int(aad_len_up, aad_len_byte_up);
 							memcpy(aad_up, opcode_up, sizeof(unsigned char));
-							memcpy(&aad_up[1], nonce_up, NONCE_LEN);
-							memcpy(&aad_up[17], &flag, sizeof(unsigned char));
+							sv_counter++;
+							memcpy(&aad_up[1], &sv_counter, sizeof(unsigned int));
+							memcpy(&aad_up[5], &flag, sizeof(unsigned char));
+							//sv_counter++;
 
 							//	CIPHERTEXT LEN SERIALIZATION
 							ct_len_up = gcm_encrypt(plaintext_up, strlen((char*)plaintext_up), aad_up, aad_len_up, session_key, iv_up, IV_LEN, ciphertext_up, tag_up);
@@ -496,7 +506,7 @@ replay_ls:
 							//	BUILD MESSAGE (resp_msg)
 							msg_len_up = sizeof(int) + sizeof(int) + aad_len_up + sizeof(int) + ct_len_up + TAG_LEN + IV_LEN;
 							memory_handler(SERVER, k, msg_len_up, &resp_msg_up);
-
+							
 							memcpy(resp_msg_up, payload_len_byte_up, sizeof(int));
 							memcpy((unsigned char*)&resp_msg_up[sizeof(int)], aad_len_byte_up, sizeof(int));
 							memcpy((unsigned char*)&resp_msg_up[sizeof(int) + sizeof(int)], aad_up, aad_len_up);
@@ -513,7 +523,7 @@ replay_ls:
 								exit(0);
 							}
 							if(flag == '0'){
-								error_handler("Error: file already exists. Aborting operation...");
+								error_handler("File already exists or file is too big. Aborting operation...");
 								free_var(SERVER);
 								break;
 							}
@@ -617,7 +627,15 @@ replay_ls:
 									free_var(SERVER);
 									exit(0);
 								}
-								flag = aad_up[17];			
+								memcpy(&c_counter, &aad[1], sizeof(unsigned int));
+								sv_counter++;
+								if(sv_counter != c_counter || c_counter == UINT_MAX){
+									error_handler("Session exiperd");
+									free_var(SERVER);
+									close(k);
+									exit(0);
+								}
+								flag = aad_up[5];			
 								if(flag != '1' && i == chunk_num - 1){
 									error_handler("Unexpected error. Waiting last chunk but flag is not '1'. Aborting operation...");
 									close(k);
@@ -627,6 +645,7 @@ replay_ls:
 									free_var(SERVER);
 									exit(0);
 								}
+
 								//	READ CT_LEN & CIPHERTEXT
 								memory_handler(SERVER, k, sizeof(int), &ct_len_byte_up);
 								if((ret = read_byte(k, (void*)ct_len_byte_up, sizeof(int))) < 0){
@@ -763,13 +782,13 @@ replay_ls:
 
 							plaintext_up[0] = DUMMY_BYTE;
 							flag = '1';
-							rc_up = RAND_bytes(nonce_up, NONCE_LEN);
+							/*rc_up = RAND_bytes(nonce_up, NONCE_LEN);
 							if(rc_up != 1){
 								error_handler("nonce generation failed");
 								close(k);
 								free_var(SERVER);
 								exit(0);
-							}
+							}*/
 							rc_up = RAND_bytes(iv_up, IV_LEN);
 							if(rc_up != 1){
 								error_handler("iv generation failed");
@@ -783,14 +802,16 @@ replay_ls:
 							//	SERIALIZATION
 
 							//	AAD SERIALIZATION
-							aad_len_up = 2 + NONCE_LEN;	
+							aad_len_up = 2 + sizeof(unsigned int);	
 							memory_handler(SERVER, k, aad_len_up, &aad_up);
 							memory_handler(SERVER, k, sizeof(int), &aad_len_byte_up);
 
 							serialize_int(aad_len_up, aad_len_byte_up);
 							memcpy(aad_up, opcode_up, sizeof(unsigned char));
-							memcpy(&aad_up[1], nonce_up, NONCE_LEN);
-							memcpy(&aad_up[17], &flag, sizeof(unsigned char));
+							sv_counter++;
+							memcpy(&aad_up[1], &sv_counter, sizeof(unsigned int));
+							memcpy(&aad_up[5], &flag, sizeof(unsigned char));
+							//sv_counter++;
 
 							//	CIPHERTEXT LEN SERIALIZATION
 							ct_len_up = gcm_encrypt(plaintext_up, strlen((char*)plaintext_up), aad_up, aad_len_up, session_key, iv_up, IV_LEN, ciphertext_up, tag_up);
@@ -834,7 +855,7 @@ replay_ls:
 							unsigned char *resp_msg_dl = NULL, *opcode_dl = NULL, *nonce_dl = NULL, *ciphertext_dl = NULL, *plaintext_dl = NULL, *ct_len_byte_dl = NULL;
 							unsigned char *aad_len_byte_dl = NULL, *aad_dl = NULL, *tag_dl = NULL, *iv_dl = NULL, *payload_len_byte_dl = NULL, *file_size_byte_dl = NULL;
 							int ct_len_dl, aad_len_dl, msg_len_dl, rc_dl, payload_len_dl;
-
+							
 							long int file_size;					
 							unsigned char flag = flag_check;
 							char *fullpath;
@@ -909,14 +930,14 @@ replay_dl:
 							memory_handler(SERVER, k, 1, &opcode_dl);
 							memory_handler(SERVER, k, IV_LEN, &iv_dl);
 
-							rc_dl = RAND_bytes(nonce_dl, NONCE_LEN);
+							/*rc_dl = RAND_bytes(nonce_dl, NONCE_LEN);
 							if(rc_dl != 1){
 								error_handler("nonce generation failed");
 								close(k);
 								free(fullpath);
 								free_var(SERVER);
 								exit(0);
-							}
+							}*/
 							rc_dl = RAND_bytes(iv, IV_LEN);
 							if(rc_dl != 1){
 								error_handler("iv generation failed");
@@ -931,18 +952,21 @@ replay_dl:
 							//	SERIALIZATION
 
 							//	AAD SERIALIZATION
-							aad_len_dl = 2 + NONCE_LEN + sizeof(int);
+							aad_len_dl = 2 + sizeof(unsigned int) + sizeof(int);
 							memory_handler(SERVER, k, aad_len_dl, &aad_dl);
 							memory_handler(SERVER, k, sizeof(int), &aad_len_byte_dl);
 
 							serialize_int(aad_len_dl, aad_len_byte_dl);
 							memcpy(aad_dl, opcode_dl, sizeof(unsigned char));
-							memcpy(&aad_dl[1], nonce_dl, NONCE_LEN);
-							memcpy(&aad_dl[17], &flag, sizeof(unsigned char));
+							sv_counter++;
+							memcpy(&aad_dl[1], &sv_counter, sizeof(unsigned int));
+							memcpy(&aad_dl[5], &flag, sizeof(unsigned char));
+							//sv_counter++;
+
 							if(file_size > 2147483647)
-								memcpy(&aad_dl[18], &file_size, sizeof(long int));
+								memcpy(&aad_dl[6], &file_size, sizeof(long int));
 							else
-								memcpy(&aad_dl[18], &file_size, sizeof(int));
+								memcpy(&aad_dl[6], &file_size, sizeof(int));
 
 							//	CIPHERTEXT LEN SERIALIZATION
 							ct_len_dl = gcm_encrypt(plaintext_dl, strlen((char*)plaintext_dl), aad_dl, aad_len_dl, session_key, iv_dl, IV_LEN, ciphertext_dl, tag_dl);
@@ -1032,7 +1056,7 @@ replay_dl:
 									memory_handler(SERVER, k, 1, &opcode_dl);
 									memory_handler(SERVER, k, IV_LEN, &iv_dl);
 
-									rc_dl = RAND_bytes(nonce_dl, NONCE_LEN);
+									/*rc_dl = RAND_bytes(nonce_dl, NONCE_LEN);
 									if(rc_dl != 1){
 										error_handler("nonce generation failed");
 										close(k);
@@ -1040,7 +1064,7 @@ replay_dl:
 										free(file_buffer);
 										free_var(SERVER);
 										exit(0);
-									}
+									}*/
 									rc_dl = RAND_bytes(iv_dl, IV_LEN);
 									if(rc_dl != 1){
 										error_handler("iv generation failed");
@@ -1056,14 +1080,16 @@ replay_dl:
 									//	SERIALIZATION
 
 									//	AAD SERIALIZATION
-									aad_len_dl = 2 + NONCE_LEN;
+									aad_len_dl = 2 + sizeof(unsigned int);
 									memory_handler(SERVER, k, aad_len_dl, &aad_dl);
 									memory_handler(SERVER, k, sizeof(int), &aad_len_byte_dl);
 
 									serialize_int(aad_len_dl, aad_len_byte_dl);
 									memcpy(aad_dl, opcode_dl, sizeof(unsigned char));
-									memcpy(&aad_dl[1], nonce_dl, NONCE_LEN);
-									memcpy(&aad_dl[17], &flag, sizeof(unsigned char));
+									sv_counter++;
+									memcpy(&aad_dl[1], &sv_counter, sizeof(unsigned int));
+									memcpy(&aad_dl[5], &flag, sizeof(unsigned char));
+									//sv_counter++;
 
 									//	CIPHERTEXT LEN SERIALIZATION
 									ct_len_dl = gcm_encrypt(plaintext_dl, CHUNK, aad_dl, aad_len_dl, session_key, iv_dl, IV_LEN, ciphertext_dl, tag_dl);
@@ -1085,8 +1111,8 @@ replay_dl:
 
 									//	BUILD MESSAGE (resp_msg)
 									msg_len_dl = sizeof(int) + sizeof(int) + aad_len_dl + sizeof(int) + ct_len_dl + TAG_LEN + IV_LEN;
-									memory_handler(SERVER, k, msg_len_dl, &resp_msg_dl);
-
+									//memory_handler(SERVER, k, msg_len_dl, &resp_msg_dl);
+									resp_msg_dl = (unsigned char*)malloc(msg_len_dl);
 									memcpy(resp_msg_dl, payload_len_byte_dl, sizeof(int));
 									memcpy((unsigned char*)&resp_msg_dl[sizeof(int)], aad_len_byte_dl, sizeof(int));
 									memcpy((unsigned char*)&resp_msg_dl[sizeof(int) + sizeof(int)], aad_dl, aad_len_dl);
@@ -1109,6 +1135,7 @@ replay_dl:
 									free(plaintext_dl);
 									free(ciphertext_dl);
 									free(file_buffer);
+									free(resp_msg_dl);
 									free_var(SERVER);
 									if(size_res < CHUNK)
 										break;
@@ -1116,6 +1143,7 @@ replay_dl:
 							}
 							// send last chunk or the single chunk composing the file
 							cout << "Sending last chunk" << endl;
+							free_var(SERVER);
 							memory_handler(SERVER, k, size_res, &plaintext_dl);
 							memory_handler(SERVER, k, size_res, &ciphertext_dl);
 							memory_handler(SERVER, k, size_res, &file_buffer);
@@ -1129,7 +1157,7 @@ replay_dl:
 							memory_handler(SERVER, k, 1, &opcode_dl);
 							memory_handler(SERVER, k, IV_LEN, &iv_dl);
 
-							rc_dl = RAND_bytes(nonce_dl, NONCE_LEN);
+							/*rc_dl = RAND_bytes(nonce_dl, NONCE_LEN);
 							if(rc_dl != 1){
 								error_handler("nonce generation failed");
 								close(k);
@@ -1137,7 +1165,7 @@ replay_dl:
 								free(file_buffer);
 								free_var(SERVER);
 								exit(0);
-							}
+							}*/
 							rc_dl = RAND_bytes(iv_dl, IV_LEN);
 							if(rc_dl != 1){
 								error_handler("iv generation failed");
@@ -1153,14 +1181,16 @@ replay_dl:
 							//	SERIALIZATION
 
 							//	AAD SERIALIZATION
-							aad_len_dl = 2 + NONCE_LEN; 
+							aad_len_dl = 2 + sizeof(unsigned int); 
 							memory_handler(SERVER, k, aad_len_dl, &aad_dl);
 							memory_handler(SERVER, k, sizeof(int), &aad_len_byte_dl);
 
 							serialize_int(aad_len_dl, aad_len_byte_dl);
 							memcpy(aad_dl, opcode_dl, sizeof(unsigned char));
-							memcpy(&aad_dl[1], nonce_dl, NONCE_LEN);
-							memcpy(&aad_dl[17], &flag, sizeof(unsigned char));
+							sv_counter++;
+							memcpy(&aad_dl[1], &sv_counter, sizeof(unsigned int));
+							memcpy(&aad_dl[5], &flag, sizeof(unsigned char));
+							//sv_counter++;
 
 							//	CIPHERTEXT LEN SERIALIZATION
 							ct_len_dl = gcm_encrypt(plaintext_dl, size_res, aad_dl, aad_len_dl, session_key, iv_dl, IV_LEN, ciphertext_dl, tag_dl);
@@ -1182,7 +1212,8 @@ replay_dl:
 
 							//	BUILD MESSAGE (resp_msg)
 							msg_len_dl = sizeof(int) + sizeof(int) + aad_len_dl + sizeof(int) + ct_len_dl + TAG_LEN + IV_LEN;
-							memory_handler(SERVER, k, msg_len_dl, &resp_msg_dl);
+							//memory_handler(SERVER, k, msg_len_dl, &resp_msg_dl);
+							resp_msg_dl = (unsigned char*)malloc(msg_len_dl);
 							memcpy(resp_msg_dl, payload_len_byte_dl, sizeof(int));
 							memcpy((unsigned char*)&resp_msg_dl[sizeof(int)], aad_len_byte_dl, sizeof(int));
 							memcpy((unsigned char*)&resp_msg_dl[sizeof(int) + sizeof(int)], aad_dl, aad_len_dl);
@@ -1203,6 +1234,7 @@ replay_dl:
 							free_var(SERVER);
 							free(fullpath);
 							//free(file_buffer);
+							free(resp_msg_dl);
 							cout << "Download completed." << endl;
 							break;
 						}
@@ -1305,14 +1337,16 @@ replay_dl:
 							   	// SERIALIZATION
 
 							   	// AAD SERIALIZATION
-							   	aad_len_mv = 2 + NONCE_LEN;
+							   	aad_len_mv = 2 + sizeof(unsigned int);
 							   	memory_handler(SERVER, k, aad_len_mv, &aad_mv);
 							   	memory_handler(SERVER, k, sizeof(int), &aad_len_byte_mv);
 
 							   	serialize_int(aad_len_mv, aad_len_byte_mv);
 								memcpy(aad_mv, opcode_mv, sizeof(unsigned char));
-								memcpy(&aad_mv[1], nonce_mv, NONCE_LEN);
-								memcpy(&aad_mv[17], &flag, sizeof(unsigned char));
+								sv_counter++;
+								memcpy(&aad_mv[1], &sv_counter, sizeof(unsigned int));
+								memcpy(&aad_mv[5], &flag, sizeof(unsigned char));
+								//sv_counter++;
 
 								// CIPHERTEXT LEN SERIALIZATION
 								ct_len_mv = gcm_encrypt(plaintext_mv, 1, aad_mv, aad_len_mv, session_key, iv_mv, IV_LEN, ciphertext_mv, tag_mv);
@@ -1438,14 +1472,16 @@ replay_rm:
 						        	// SERIALIZATION
 
 						        	// AAD SERIALIZATION
-								aad_len_rm = 2 + NONCE_LEN;
+								aad_len_rm = 2 + sizeof(unsigned int);
 								memory_handler(SERVER, k, aad_len_rm, &aad_rm);
 								memory_handler(SERVER, k, sizeof(int), &aad_len_byte_rm);
 
 								serialize_int(aad_len_rm, aad_len_byte_rm);
 								memcpy(aad_rm, opcode_rm, sizeof(unsigned char));
-								memcpy(&aad_rm[1], nonce_rm, NONCE_LEN);
-								memcpy(&aad_rm[17], &flag, sizeof(unsigned char));
+								sv_counter++;
+								memcpy(&aad_rm[1], &sv_counter, sizeof(unsigned int));
+								memcpy(&aad_rm[5], &flag, sizeof(unsigned char));
+								//sv_counter++;
 
 						        	// CIPHERTEXT LEN SERIALIZATION
 								ct_len_rm = gcm_encrypt(plaintext_rm, 1, aad_rm, aad_len_rm, session_key, iv_rm, IV_LEN, ciphertext_rm, tag_rm);
@@ -1532,14 +1568,16 @@ replay_rm:
 							//	SERIALIZATION
 
 							//	AAD SERIALIZATION
-							aad_len_lo = 1 + NONCE_LEN;
+							aad_len_lo = 1 + sizeof(unsigned int);
 							memory_handler(SERVER, k, aad_len_lo, &aad_lo);
 							memory_handler(SERVER, k, sizeof(int), &aad_len_byte_lo);
 							
 							serialize_int(aad_len_lo, aad_len_byte_lo);
+							sv_counter++;
 							memcpy(aad_lo, opcode_lo, sizeof(unsigned char));
-							memcpy(&aad_lo[1], nonce_lo, NONCE_LEN);
-							
+							memcpy(&aad_lo[1], &sv_counter, sv_counter);
+							//sv_counter++;
+
 							//	CIPHERTEXT LEN SERIALIZATION
 							ct_len_lo = gcm_encrypt(plaintext_lo, 1, aad_lo, aad_len_lo, session_key, iv_lo, IV_LEN, ciphertext_lo, tag_lo);
 							if(ct_len_lo <= 0){ 

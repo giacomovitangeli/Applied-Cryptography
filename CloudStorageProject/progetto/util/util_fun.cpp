@@ -6,9 +6,9 @@
 using namespace std;
 
 int cl_index_free_buf = 0;
-unsigned char *cl_free_buf[8192] = {0};
+unsigned char *cl_free_buf[65536] = {0};
 int sv_index_free_buf = 0;
-unsigned char *sv_free_buf[8192] = {0};
+unsigned char *sv_free_buf[65536] = {0};
 
 //	START CRYPTO UTILITY FUNCTIONS
 
@@ -557,6 +557,7 @@ void free_var(int side){	// Buffer allocated with malloc() pointers, multiple fr
 		for(int i = 0; i < counter - 1; i++){
 			if(cl_free_buf[i]){
 				free((void*)cl_free_buf[i]);
+				//cout << "free: " << i << endl;
 				cl_free_buf[i] = NULL;
 			}
 		}
@@ -567,6 +568,7 @@ void free_var(int side){	// Buffer allocated with malloc() pointers, multiple fr
 		for(int i = 0; i < counter - 1; i++){
 			if(sv_free_buf[i]){
 				free((void*)sv_free_buf[i]);
+				//cout << "free: " << i << endl;
 				sv_free_buf[i] = NULL;
 			}
 		}
@@ -717,11 +719,11 @@ int is_auth(int socket, user *list){
 	return 0;
 }
 
-char* get_user(int socket, user *list){
+user* get_user(int socket, user *list){
 	user *scan = list;
 	while(scan != NULL){
 		if(scan->u_sv_socket == socket)
-			return scan->username;
+			return scan;
 
 		scan = scan->next;
 	}
@@ -760,7 +762,6 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 		return -1;
 	}
 
-	//(*usr) = new user;
 	strncpy((*usr)->username, username.c_str(), username.size());
 	(*usr)->username[username.size()] = '\0';
 	(*usr)->u_cl_socket = sock;

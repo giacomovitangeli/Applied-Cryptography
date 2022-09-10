@@ -56,6 +56,7 @@ int main(){
 		free_var(CLIENT);
 		exit(0);
 	}
+	this_user->c_counter = 0;
 	if((ret = c_authenticate(socket_d, &this_user)) < 0){
 		error_handler("authentication failed");
 		close(socket_d);
@@ -106,6 +107,7 @@ int main(){
 			}
 	        	case LIST:{	// ls command		[payload_len][aad_len]{[opcode][nonce]}[cyph_len][dummy_byte][tag][iv]
 				int payload_len, ct_len, aad_len, msg_len, rc;
+				unsigned int sv_counter;
     				unsigned char *rcv_msg, *resp_msg, *tag, *iv, *plaintext, *ciphertext, *opcode, *nonce, *aad, *aad_len_byte, *payload_len_byte, *ct_len_byte;	
 				unsigned char flag;		
 		
@@ -117,13 +119,13 @@ int main(){
 				memory_handler(CLIENT, socket_d, 1, &ciphertext);
 				memory_handler(CLIENT, socket_d, IV_LEN, &iv);
 
-				rc = RAND_bytes(nonce, NONCE_LEN);
+				/*rc = RAND_bytes(nonce, NONCE_LEN);
 				if(rc != 1){
 					error_handler("nonce generation failed");
 					free_var(CLIENT);
 					close(socket_d);
 					exit(0);
-				}
+				}*/
 				rc = RAND_bytes(iv, IV_LEN);
 				if(rc != 1){
 					error_handler("iv generation failed");
@@ -137,13 +139,13 @@ int main(){
 				//	SERIALIZATION
 
 				//	AAD SERIALIZATION
-				aad_len = 1 + NONCE_LEN;
+				aad_len = 1 + sizeof(unsigned int); //NONCE_LEN;
 				memory_handler(CLIENT, socket_d, aad_len, &aad);			
 				memory_handler(CLIENT, socket_d, sizeof(int), &aad_len_byte); 
 				serialize_int(aad_len, aad_len_byte);
 				memcpy(aad, opcode, sizeof(unsigned char));
-				memcpy(&aad[1], nonce, NONCE_LEN);
-
+				memcpy(&aad[1], &this_user->c_counter, sizeof(unsigned int));
+				this_user ->c_counter++;
 				//	CIPHERTEXT LEN SERIALIZATION
 				plaintext[0] = DUMMY_BYTE;
 				ct_len = gcm_encrypt(plaintext, sizeof(char), aad, aad_len, this_user->session_key, iv, IV_LEN, ciphertext, tag);
@@ -244,8 +246,15 @@ int main(){
 					close(socket_d);
 					exit(0);
 				}
-				cmd = int(aad[0]) - OFFSET;		
-				flag = aad[17];
+				cmd = int(aad[0]) - OFFSET;
+				memcpy(&sv_counter, &aad[1], sizeof(unsigned int));
+				if(this_user->c_counter != sv_counter || sv_counter == UINT_MAX){
+					error_handler("Session exiperd");
+					free_var(CLIENT);
+					close(socket_d);
+					exit(0);
+				}		
+				flag = aad[5];
 				//	READ CT_LEN & CIPHERTEXT
 				memory_handler(CLIENT, socket_d, sizeof(int), &ct_len_byte);
 				if((ret = read_byte(socket_d, (void*)ct_len_byte, sizeof(int))) < 0){
@@ -331,6 +340,7 @@ int main(){
 			}
 			case UPLOAD:{	// up command 1 - request - [pay_len][aad_len]{[nonce][opcode][file_size_req]}[ciph_len]([ciphertext - file_name])[TAG][IV]
 				int payload_len, ct_len, aad_len, rc, msg_len;
+				unsigned int sv_counter;
 				long int file_size;
 	    			unsigned char *rcv_msg, *resp_msg, *tag, *iv, *plaintext, *ciphertext, *opcode, *nonce, *aad, *aad_len_byte, *payload_len_byte, *ct_len_byte, *file_size_byte;
 				unsigned char flag;
@@ -395,20 +405,21 @@ int main(){
 		
 				//	AAD SERIALIZATION
 				if(file_size > 2147483647)
-					aad_len = 1 + NONCE_LEN + sizeof(long int);
+					aad_len = 1 + sizeof(unsigned int) + sizeof(long int);
 				else
-					aad_len = 1 + NONCE_LEN + sizeof(int);
+					aad_len = 1 + sizeof(unsigned int) + sizeof(int);
 					
 				memory_handler(CLIENT, socket_d, aad_len, &aad);
 				memory_handler(CLIENT, socket_d, sizeof(int), &aad_len_byte);
 
 				serialize_int(aad_len, aad_len_byte);
 				memcpy(aad, opcode, sizeof(unsigned char));
-				memcpy(&aad[1], nonce, NONCE_LEN);
+				memcpy(&aad[1], &this_user->c_counter, sizeof(unsigned int));
+				this_user->c_counter++;
 				if(file_size > 2147483647)
-					memcpy(&aad[17], &file_size, sizeof(long int));
+					memcpy(&aad[5], &file_size, sizeof(long int));
 				else
-					memcpy(&aad[17], &file_size, sizeof(int));
+					memcpy(&aad[5], &file_size, sizeof(int));
 
 				//	CIPHERTEXT LEN SERIALIZATION
 				ct_len = gcm_encrypt(plaintext, strlen((char*)plaintext), aad, aad_len, this_user->session_key, iv, IV_LEN, ciphertext, tag);
@@ -506,7 +517,14 @@ int main(){
 					close(socket_d);
 					exit(0);
 				}			
-
+				memcpy(&sv_counter, &aad[1], sizeof(unsigned int));
+				if(this_user->c_counter != sv_counter || sv_counter == UINT_MAX){
+					error_handler("Session exiperd");
+					free_var(CLIENT);
+					close(socket_d);
+					exit(0);
+				}	
+				cout << "c: " << this_user->c_counter << " s: " << sv_counter << endl;	
 				//	READ CT_LEN & CIPHERTEXT
 				if((ret = read_byte(socket_d, (void*)ct_len_byte, sizeof(int))) < 0){
 					error_handler("recv() [ct_len_byte] failed");
@@ -572,10 +590,9 @@ int main(){
 					exit(0);
 				}
 
-				flag = aad[17];
+				flag = aad[5];
 				if(flag != '1'){
 					error_handler("Upload error");
-					cout << plaintext << endl;
 					free_var(CLIENT);
 					break;
 				}
@@ -588,7 +605,7 @@ int main(){
 				memset(tag, 0, TAG_LEN);
 				memset(nonce, 0, NONCE_LEN);
 				ct_len = 0;
-				aad_len = 2 + NONCE_LEN;
+				aad_len = 2 + sizeof(unsigned int);
 				payload_len = 0;
 				msg_len = 0;
 				rc = 0;
@@ -608,7 +625,6 @@ int main(){
 				}
 				
 				long int size_res = file_size;
-				cout << "file size: " << file_size << endl;
 				if(file_size > CHUNK){
 					cout << "File greater than 1Mb - Proceding to send chunks" << endl;
 					for(long int i = 0; i < file_size - CHUNK && file_size > CHUNK; i += CHUNK){	// If file_size is greater than 1 chunk (1mb) then send the file divided in chunk but not the last
@@ -633,13 +649,14 @@ int main(){
 						memcpy(data_pt, file_buffer, CHUNK);
 
 						// RANDOM VALUES
-						rc = RAND_bytes(nonce, NONCE_LEN);
+						/*rc = RAND_bytes(nonce, NONCE_LEN);
 						if(rc != 1){
 							error_handler("nonce generation failed");
 							free_var(CLIENT);
 							close(socket_d);
 							exit(0);
-						}
+						}*/
+	
 						rc = RAND_bytes(tag, TAG_LEN);
 						if(rc != 1){
 							error_handler("nonce generation failed");
@@ -663,8 +680,9 @@ int main(){
 						memory_handler(CLIENT, socket_d, sizeof(int), &data_aad_len_byte);
 						serialize_int(aad_len, data_aad_len_byte);
 						memcpy(data_aad, opcode, sizeof(unsigned char));
-						memcpy(&data_aad[1], nonce, NONCE_LEN);
-						memcpy(&data_aad[17], &flag, sizeof(unsigned char));
+						memcpy(&data_aad[1], &this_user->c_counter, sizeof(unsigned int));
+						this_user->c_counter++;
+						memcpy(&data_aad[5], &flag, sizeof(unsigned char));
 						
 						// CT SERIALIZATION
 						ct_len = gcm_encrypt(data_pt, CHUNK, data_aad, aad_len, this_user->session_key, iv, IV_LEN, data_ct, tag);
@@ -685,8 +703,8 @@ int main(){
 
 						//	BUILD MESSAGE (resp_msg)
 						msg_len = sizeof(int) + sizeof(int) + aad_len + sizeof(int) + ct_len + TAG_LEN + IV_LEN;
-						memory_handler(CLIENT, socket_d, msg_len, &data_resp_msg);
-
+						//memory_handler(CLIENT, socket_d, msg_len, &data_resp_msg);
+						data_resp_msg = (unsigned char*)malloc(msg_len);
 						memcpy(data_resp_msg, data_payload_len_byte, sizeof(int));
 						memcpy((unsigned char*)&data_resp_msg[sizeof(int)], data_aad_len_byte, sizeof(int));
 						memcpy((unsigned char*)&data_resp_msg[sizeof(int) + sizeof(int)], data_aad, aad_len);
@@ -708,6 +726,7 @@ int main(){
 						free(data_pt);
 						free(data_ct);
 						free(file_buffer);
+						free(data_resp_msg);
 						size_res -= CHUNK;
 						if(size_res < CHUNK)
 							break;
@@ -728,14 +747,14 @@ int main(){
 				memory_handler(CLIENT, socket_d, IV_LEN, &iv);
 				memory_handler(CLIENT, socket_d, TAG_LEN, &tag);
 				memory_handler(CLIENT, socket_d, 1, &opcode);
-				rc = RAND_bytes(nonce, NONCE_LEN);
+				/*rc = RAND_bytes(nonce, NONCE_LEN);
 				if(rc != 1){
 					ERR_print_errors_fp(stdout);
 					error_handler("nonce generation failed");
 					free_var(CLIENT);
 					close(socket_d);
 					exit(0);
-				}
+				}*/
 				rc = RAND_bytes(tag, TAG_LEN);
 				if(rc != 1){
 					error_handler("tag generation failed");
@@ -759,8 +778,9 @@ int main(){
 				memory_handler(CLIENT, socket_d, aad_len, &data_aad);
 				serialize_int(aad_len, data_aad_len_byte);
 				memcpy(data_aad, opcode, sizeof(unsigned char));
-				memcpy(&data_aad[1], nonce, NONCE_LEN);
-				memcpy(&data_aad[17], &flag, sizeof(unsigned char));
+				memcpy(&data_aad[1], &this_user->c_counter, sizeof(unsigned int));
+				memcpy(&data_aad[5], &flag, sizeof(unsigned char));
+				this_user->c_counter++;
 
 				// CT SERIALIZATION
 				ct_len = gcm_encrypt(data_pt, size_res, data_aad, aad_len, this_user->session_key, iv, IV_LEN, data_ct, tag);
@@ -847,10 +867,16 @@ int main(){
 					close(socket_d);
 					exit(0);
 				}
-				cmd = int(aad[0]) - OFFSET;			
-				flag = aad[17];
+				cmd = int(aad[0]) - OFFSET;
+				memcpy(&sv_counter, &aad[1], sizeof(unsigned int));
+				if(this_user->c_counter != sv_counter || sv_counter == UINT_MAX){
+					error_handler("Session exiperd");
+					free_var(CLIENT);
+					close(socket_d);
+					exit(0);
+				}					
+				flag = aad[5];
 				if((int(flag) - OFFSET) == 0){
-					// interrompi tutto
 					error_handler("Upload error");
 					free_var(CLIENT);
 					break;
@@ -931,6 +957,7 @@ int main(){
 			}
 		    case DOWNLOAD:{	// dl command
 				int payload_len, ct_len, aad_len, rc, msg_len;
+				unsigned int sv_counter;
 				long int file_size;
 	    			unsigned char *rcv_msg, *resp_msg, *tag, *iv, *plaintext, *ciphertext, *opcode, *nonce, *aad, *aad_len_byte, *payload_len_byte, *ct_len_byte;
 				unsigned char flag;
@@ -959,14 +986,14 @@ int main(){
 				memory_handler(CLIENT, socket_d, TAG_LEN, &tag);
 				memory_handler(CLIENT, socket_d, 1, &opcode);
 				
-				rc = RAND_bytes(nonce, NONCE_LEN);
+				/*rc = RAND_bytes(nonce, NONCE_LEN);
 				if(rc != 1){
 					error_handler("nonce generation failed");
 					free_var(CLIENT);
 					free(fullpath);
 					close(socket_d);
 					exit(0);
-				}
+				}*/
 				rc = RAND_bytes(iv, IV_LEN);
 				if(rc != 1){
 					error_handler("iv generation failed");
@@ -983,14 +1010,14 @@ int main(){
 				//	SERIALIZATION DL-1
 		
 				//	AAD SERIALIZATION
-				aad_len = 1 + NONCE_LEN;	
+				aad_len = 1 + sizeof(unsigned int);	
 				memory_handler(CLIENT, socket_d, aad_len, &aad);
 				memory_handler(CLIENT, socket_d, sizeof(int), &aad_len_byte);
 
 				serialize_int(aad_len, aad_len_byte);
 				memcpy(aad, opcode, sizeof(unsigned char));
-				memcpy(&aad[1], nonce, NONCE_LEN);
-
+				memcpy(&aad[1], &this_user->c_counter, sizeof(unsigned int));
+				this_user->c_counter++;
 				//	CIPHERTEXT LEN SERIALIZATION
 				ct_len = gcm_encrypt(plaintext, strlen((char*)plaintext), aad, aad_len, this_user->session_key, iv, IV_LEN, ciphertext, tag);
 				if(ct_len <= 0){ 
@@ -1094,6 +1121,13 @@ int main(){
 					close(socket_d);
 					exit(0);
 				}
+				memcpy(&sv_counter, &aad[1], sizeof(unsigned int));
+				if(this_user->c_counter != sv_counter || sv_counter == UINT_MAX){
+					error_handler("Session exiperd");
+					free_var(CLIENT);
+					close(socket_d);
+					exit(0);
+				}		
 
 				//	READ CT_LEN & CIPHERTEXT
 				if((ret = read_byte(socket_d, (void*)ct_len_byte, sizeof(int))) < 0){
@@ -1169,7 +1203,7 @@ int main(){
 					exit(0);
 				}
 
-				flag = aad[17];
+				flag = aad[5];
 				if(flag != '1'){
 					error_handler("Download error. Aborting...");
 					cout << plaintext << endl;
@@ -1177,7 +1211,7 @@ int main(){
 					free(fullpath);
 					break;
 				}
-				memcpy(&file_size, &aad[18], sizeof(long int));	// getting file size from replay
+				memcpy(&file_size, &aad[6], sizeof(long int));	// getting file size from replay
 				cout << "Download request OK. Starting..." << endl;
 				free_var(CLIENT); // RESET, reallocation needed
 
@@ -1263,7 +1297,15 @@ int main(){
 						close(socket_d);
 						exit(0);
 					}
-
+					memcpy(&sv_counter, &aad[1], sizeof(unsigned int));
+					if(this_user->c_counter != sv_counter || sv_counter == UINT_MAX){
+						error_handler("Session exiperd");
+						free_var(CLIENT);
+						close(socket_d);
+						exit(0);
+					}	
+					flag = aad[5];
+	
 					//	READ CT_LEN & CIPHERTEXT
 					memory_handler(CLIENT, socket_d, sizeof(int), &ct_len_byte);
 					if((ret = read_byte(socket_d, (void*)ct_len_byte, sizeof(int))) < 0){
@@ -1404,6 +1446,7 @@ int main(){
 			}
 		    case RENAME:{	// mv command
 				int payload_len, ct_len, aad_len, rc, msg_len;
+				unsigned int sv_counter;
 				unsigned char *rcv_msg, *resp_msg, *tag, *iv, *plaintext, *ciphertext, *opcode, *nonce, *aad, *aad_len_byte, *payload_len_byte, *ct_len_byte;
 
 				// MALLOC & RAND VARIABLES
@@ -1414,13 +1457,13 @@ int main(){
 				memory_handler(CLIENT, socket_d, 1, &opcode);
 				memory_handler(CLIENT, socket_d, 512, &ciphertext);
 
-				rc = RAND_bytes(nonce, NONCE_LEN);
+				/*rc = RAND_bytes(nonce, NONCE_LEN);
 				if(rc != 1){
 				    error_handler("nonce generation failed");
 				    free_var(CLIENT);
 				    close(socket_d);
 				    exit(0);
-				}
+				}*/
 				rc = RAND_bytes(iv, IV_LEN);
 				if(rc != 1){
 				    error_handler("iv generation failed");
@@ -1436,13 +1479,14 @@ int main(){
 				// SERIALIZATION UP-1
 
 				// AAD SERIALIZATION
-				aad_len = 1 + NONCE_LEN + sizeof(int);
+				aad_len = 1 + sizeof(unsigned int) + sizeof(int);
 				memory_handler(CLIENT, socket_d, aad_len, &aad);
 				memory_handler(CLIENT, socket_d, sizeof(int), &aad_len_byte);
 
 				serialize_int(aad_len, aad_len_byte);
 				memcpy(aad, opcode, sizeof(unsigned char));
-				memcpy(&aad[1], nonce, NONCE_LEN);
+				memcpy(&aad[1], &this_user->c_counter, sizeof(unsigned int));
+				this_user->c_counter++;
 
 				// CIPHERTEXT LEN SERIALIZATION
 				ct_len = gcm_encrypt(plaintext, strlen((char*)plaintext), aad, aad_len, this_user->session_key, iv, IV_LEN, ciphertext, tag);
@@ -1539,7 +1583,13 @@ int main(){
 				    exit(0);
 				}
 				cmd = int(aad[0]) - OFFSET;
-
+				memcpy(&sv_counter, &aad[1], sizeof(unsigned int));
+				if(this_user->c_counter != sv_counter || sv_counter == UINT_MAX){
+					error_handler("Session exiperd");
+					free_var(CLIENT);
+					close(socket_d);
+					exit(0);
+				}	
 				// READ CT_LEN & CIPHERTEXT
 				if((ret = read_byte(socket_d, (void*)ct_len_byte, sizeof(int))) < 0){
 				    error_handler("recv() [ct_len_byte] failed");
@@ -1605,7 +1655,7 @@ int main(){
 				    exit(0);
 				}
 
-				if(aad[17] == '1')
+				if(aad[5] == '1')
 					cout << "Rename complete successfully" << endl;
 				else
 					cout << "Something went wrong. Rename failed." << endl;
@@ -1615,6 +1665,7 @@ int main(){
 			}
 		    case DELETE:{	// rm command
 				int payload_len, ct_len, aad_len, rc, msg_len;
+				unsigned int sv_counter;
 				unsigned char *rcv_msg, *resp_msg, *tag, *iv, *plaintext, *ciphertext, *opcode, *nonce, *aad, *aad_len_byte, *payload_len_byte, *ct_len_byte;
 				//unsigned char flag;
 
@@ -1642,19 +1693,19 @@ int main(){
 				}
 
 				opcode[0] = '6';
-				//memset(ciphertext, 0, 512);
 				strncpy((char*)plaintext, (char*)file1, strlen((char*)file1));
 
 				//	DELETE RM-1
 
 				//	AAD SERIALIZATION
-				aad_len = 1 + NONCE_LEN;	//opcode + lunghezza nonce -- opcode = unsigned char
+				aad_len = 1 + sizeof(unsigned int);
 				memory_handler(CLIENT, socket_d, aad_len, &aad);
 				memory_handler(CLIENT, socket_d, sizeof(int), &aad_len_byte);
 
 				serialize_int(aad_len, aad_len_byte);
 				memcpy(aad, opcode, sizeof(unsigned char));
-				memcpy(&aad[1], nonce, NONCE_LEN);
+				memcpy(&aad[1], &this_user->c_counter, sizeof(unsigned int));
+				this_user->c_counter++;
 
 				//	CIPHERTEXT LEN SERIALIZATION
 				ct_len = gcm_encrypt(plaintext, strlen((char*)plaintext), aad, aad_len, this_user->session_key, iv, IV_LEN, ciphertext, tag);
@@ -1752,7 +1803,13 @@ int main(){
 				    exit(0);
 				}
 				cmd = int(aad[0]) - OFFSET;
-
+				memcpy(&sv_counter, &aad[1], sizeof(unsigned int));
+				if(this_user->c_counter != sv_counter || sv_counter == UINT_MAX){
+					error_handler("Session exiperd");
+					free_var(CLIENT);
+					close(socket_d);
+					exit(0);
+				}	
 				// READ CT_LEN & CIPHERTEXT
 				if((ret = read_byte(socket_d, (void*)ct_len_byte, sizeof(int))) < 0){
 				    error_handler("recv() [ct_len_byte] failed");
@@ -1818,7 +1875,7 @@ int main(){
 				    exit(0);
 				}
 
-				if(aad[17] == '1')
+				if(aad[5] == '1')
 					cout << "File deleted from cloud." << endl;
 				else
 					cout << "Something went wrong. Remove failed." << endl << plaintext << endl;
@@ -1828,6 +1885,7 @@ int main(){
 			}
 			case LOGOUT:{
 				int payload_len, ct_len, aad_len, rc, msg_len;
+				unsigned int sv_counter;
 				unsigned char *rcv_msg, *resp_msg, *tag, *iv, *plaintext, *ciphertext, *opcode, *nonce, *aad, *aad_len_byte, *payload_len_byte, *ct_len_byte;
 				//unsigned char flag;
 
@@ -1839,13 +1897,13 @@ int main(){
 				memory_handler(CLIENT, socket_d, 1, &opcode);
 				memory_handler(CLIENT, socket_d, 1, &ciphertext);
 
-				rc = RAND_bytes(nonce, NONCE_LEN);
+				/*rc = RAND_bytes(nonce, NONCE_LEN);
 				if(rc != 1){
 				    error_handler("nonce generation failed");
 				    free_var(CLIENT);
 				    close(socket_d);
 				    exit(0);
-				}
+				}*/
 				rc = RAND_bytes(iv, IV_LEN);
 				if(rc != 1){
 				    error_handler("iv generation failed");
@@ -1858,7 +1916,7 @@ int main(){
 				plaintext[0] = DUMMY_BYTE;
 
 				//	AAD SERIALIZATION
-				aad_len = 1 + NONCE_LEN;	
+				aad_len = 1 + sizeof(unsigned int);	
 				memory_handler(CLIENT, socket_d, aad_len, &aad);
 				memory_handler(CLIENT, socket_d, sizeof(int), &aad_len_byte);
 
@@ -1947,6 +2005,13 @@ int main(){
 				    exit(0);
 				}
 				cmd = int(aad[0]) - OFFSET;
+				memcpy(&sv_counter, &aad[1], sizeof(unsigned int));
+				if(this_user->c_counter != sv_counter || sv_counter == UINT_MAX){
+					error_handler("Session exiperd");
+					free_var(CLIENT);
+					close(socket_d);
+					exit(0);
+				}	
 
 				// READ CT_LEN & CIPHERTEXT
 				if((ret = read_byte(socket_d, (void*)ct_len_byte, sizeof(int))) < 0){
