@@ -250,7 +250,6 @@ int digital_sign_verify(EVP_PKEY *public_key, unsigned char *sign_buf, int sign_
 	const EVP_MD* md = EVP_sha256();
 	int ret = -1;
 
-	//cout << "Sign Len: " << sign_len << endl;
 	// CONTEST CREATION
 	EVP_MD_CTX* ctx;
 	if(!(ctx = EVP_MD_CTX_new())){
@@ -415,24 +414,18 @@ void print_man(){
 
 //	COMMAND FUNCTIONS
 
-void split_file(unsigned char *cmd, unsigned char **p1, unsigned char **p2){
-	char *ptr = NULL, *save = NULL;
-	const char *delim = "- ";
-
-	ptr = strtok_r((char*)cmd, delim, &save);
-	if((ptr = strtok_r(NULL, delim, &save)))
-		strncpy((char*)*p1, ptr, strlen(ptr));
-
-	if((ptr = strtok_r(NULL, delim, &save)))
-		strncpy((char*)*p2, ptr, strlen(ptr));
-
+int split_file(unsigned char *cmd, unsigned char **p1){
+	if(cmd[3] == '-') 
+    		memmove(*p1, &cmd[3]+1, strlen((char*)cmd) - 4);
+	return strlen((char*)*p1);
 }
 
 int blacklisting_cmd(string str) {
 	string check1 = "../";
 	string check2 = "..";
+	string check3 = "./";
 
-	if(str.find(check1) != string::npos || str.find(check2) != string::npos)
+	if(str.find(check1) != string::npos || str.find(check2) != string::npos || str.find(check3) != string::npos)
 		return -1;
 	return 0;
 }
@@ -466,8 +459,8 @@ int check_cmd(unsigned char *plaintext, int cmd){
 	}
 	else{
 		if(cmd == 5) {
-			to_check1 = strtok(pt_cpy, "|");
-			to_check2 = strtok(NULL, "|");
+			to_check1 = strtok(pt_cpy, "|");	
+			to_check2 = strtok(NULL, "|");		 .
 
 			int r1 = blacklisting_cmd(to_check1);
 			int r2 = blacklisting_cmd(to_check2);
@@ -489,19 +482,19 @@ int check_cmd(unsigned char *plaintext, int cmd){
 }
 
 int get_cmd(char* cmd){
-	if(strncmp(cmd, "man", 3) == 0)
+	if(strncmp(cmd, "man", 3) == 0 && strlen(cmd) == 3)
 		return 1;
-	if(strncmp(cmd, "ls", 2) == 0)
+	if(strncmp(cmd, "ls", 2) == 0 && strlen(cmd) == 2)
 		return 2;
-	if(strncmp(cmd, "up", 2) == 0)
+	if(strncmp(cmd, "up -", 4) == 0)
 		return 3;
-	if(strncmp(cmd, "dl", 2) == 0)
+	if(strncmp(cmd, "dl -", 4) == 0)
 		return 4;
-	if(strncmp(cmd, "mv", 2) == 0)
+	if(strncmp(cmd, "mv -", 4) == 0)
 		return 5;
-	if(strncmp(cmd, "rm", 2) == 0)
+	if(strncmp(cmd, "rm -", 4) == 0)
 		return 6;
-	if(strncmp(cmd, "lo", 2) == 0)
+	if(strncmp(cmd, "lo", 2) == 0 && strlen(cmd) == 2)
 		return 7;
 	
 	return -1;
@@ -557,7 +550,6 @@ void free_var(int side){	// Buffer allocated with malloc() pointers, multiple fr
 		for(int i = 0; i < counter - 1; i++){
 			if(cl_free_buf[i]){
 				free((void*)cl_free_buf[i]);
-				//cout << "free: " << i << endl;
 				cl_free_buf[i] = NULL;
 			}
 		}
@@ -568,7 +560,6 @@ void free_var(int side){	// Buffer allocated with malloc() pointers, multiple fr
 		for(int i = 0; i < counter - 1; i++){
 			if(sv_free_buf[i]){
 				free((void*)sv_free_buf[i]);
-				//cout << "free: " << i << endl;
 				sv_free_buf[i] = NULL;
 			}
 		}
@@ -581,7 +572,7 @@ void free_var(int side){	// Buffer allocated with malloc() pointers, multiple fr
 }
 
 void memory_handler(int side, int socket, int new_size, unsigned char **new_buf){
-	*new_buf = (unsigned char*)calloc(new_size+1, sizeof(unsigned char*));
+	*new_buf = (unsigned char*)calloc(new_size+1, sizeof(unsigned char));	//*
 	if(!*new_buf){
 		free_var(side);
 		if(socket)
@@ -1075,7 +1066,7 @@ int c_authenticate(int sock, user **usr){	// auth client side - send nonce + use
 	return 1;	
 }
 
-int s_authenticate(int sock, user **usr_list, unsigned char *main_key){	// auth server side - receive nonce + username - send crypto data - receive session key (& other crypto data)
+int s_authenticate(int sock, user **usr_list){// auth server side - receive nonce + username - send crypto data - receive session key (& other crypto data)
 
 	int payload_len, user_len, ret;
 	unsigned char *usern, *nonce;
@@ -1402,11 +1393,19 @@ int s_authenticate(int sock, user **usr_list, unsigned char *main_key){	// auth 
 	user *u = new user;
 	u->u_cl_socket = -1;
 	u->u_sv_socket = sock;
+	u->c_counter = 0;
+	u->s_counter = 0;
 	strncpy(u->username, (char*)usern, 10);
-	u->session_key = session_key;
+	u->session_key = (unsigned char*)malloc(32);
+	if(!u->session_key){
+		error_handler("Malloc failed");
+		free_var(SERVER);
+		close(sock);
+		exit(0);
+	}
+	memcpy(u->session_key, session_key, 32);
 	u->next = *usr_list;
 	*usr_list = u;
-	memcpy(main_key, session_key, 32);
 
 	cout << "Client Authenticated! Session with " << username << " starts." << endl;
 
@@ -1440,6 +1439,13 @@ void delete_key(unsigned char* session_key, int key_len){
 //	END UTILITY FUNCTIONS
 
 
-
+void stampa(user *list){
+	user *scan = list;
+	while(scan != NULL){
+		cout << "Sock: " << scan->u_sv_socket << endl;
+		cout << "User: " << scan->username << endl;
+		scan = scan->next;
+	}
+}
 
 

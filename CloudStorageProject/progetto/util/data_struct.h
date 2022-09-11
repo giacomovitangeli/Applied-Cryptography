@@ -116,6 +116,7 @@ void print_man();
 int check_cmd(unsigned char*, int);
 int blacklisting_cmd(string);
 int get_cmd(char*);
+void stampa(user*);
 
 void serialize_int(int, unsigned char*);
 void serialize_longint(long int, unsigned char*);
@@ -125,7 +126,7 @@ int get_num_file(const char*);
 void free_var(int);
 void memory_handler(int, int, int, unsigned char**);
 
-void split_file(unsigned char*, unsigned char**, unsigned char**);
+int split_file(unsigned char*, unsigned char**);
 
 unsigned char* serialize_certificate(string, int*);
 void deserialize_certificate(X509*, unsigned char*, int);
@@ -135,7 +136,7 @@ void pubkey_to_PKEY(EVP_PKEY**, unsigned char*, int);
 void privkey_to_PKEY(EVP_PKEY**, unsigned char*, int);
 
 int c_authenticate(int, user**);
-int s_authenticate(int, user**, unsigned char*);
+int s_authenticate(int, user**);
 
 int is_auth(int, user*);
 user* get_user(int, user*);
