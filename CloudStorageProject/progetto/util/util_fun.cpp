@@ -460,7 +460,7 @@ int check_cmd(unsigned char *plaintext, int cmd){
 	else{
 		if(cmd == 5) {
 			to_check1 = strtok(pt_cpy, "|");	
-			to_check2 = strtok(NULL, "|");		 .
+			to_check2 = strtok(NULL, "|");		 
 
 			int r1 = blacklisting_cmd(to_check1);
 			int r2 = blacklisting_cmd(to_check2);
